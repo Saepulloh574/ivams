@@ -1,2 +1,1 @@
-# ivams
-hemm
+kepo lu tolol
