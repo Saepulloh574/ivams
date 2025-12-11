@@ -8,7 +8,24 @@ import os
 import requests
 import time
 
+# ================= Konstanta Telegram untuk Tombol =================
+TELEGRAM_BOT_LINK = "https://t.me/zuraxridbot"
+TELEGRAM_ADMIN_LINK = "https://t.me/Imr1d"
+
 # ================= Utils =================
+
+# Fungsi baru untuk membuat keyboard inline
+def create_inline_keyboard():
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "➡️ GetNumber", "url": TELEGRAM_BOT_LINK},
+                {"text": "👤 Admin", "url": TELEGRAM_ADMIN_LINK}
+            ]
+        ]
+    }
+    return json.dumps(keyboard)
+
 def format_otp_message(otp_data):
     otp = otp_data.get('otp', 'N/A')
     phone = otp_data.get('phone', 'N/A')
@@ -30,6 +47,7 @@ FULL MESSAGES:
 
 def format_multiple_otps(otp_list):
     if len(otp_list) == 1:
+        # Panggil format_otp_message, lalu tambahkan keyboard di send_tg
         return format_otp_message(otp_list[0])
     
     header = f"🔐 <b>{len(otp_list)} New OTPs Received</b>\n\n"
@@ -43,6 +61,7 @@ def format_multiple_otps(otp_list):
     return header + "\n".join(items) + "\n\n<i>Tap any OTP to copy it!</i>"
 
 
+# Fungsi-fungsi utilitas lainnya tetap sama...
 def extract_otp_from_text(text):
     if not text:
         return None
@@ -144,10 +163,23 @@ BOT = "7562117237:AAFQnb5aCmeSHHi_qAJz3vkoX4HbNGohe38"
 CHAT = "7184123643"
 LAST_ID = 0
 
-def send_tg(text):
+# --- FUNGSI send_tg YANG DIMODIFIKASI ---
+def send_tg(text, with_inline_keyboard=False):
+    payload = {
+        'chat_id': CHAT,
+        'text': text,
+        'parse_mode': 'HTML'
+    }
+    
+    if with_inline_keyboard:
+        # Tambahkan keyboard inline hanya jika with_inline_keyboard=True
+        payload['reply_markup'] = create_inline_keyboard()
+
     try:
-        requests.post(f"https://api.telegram.org/bot{BOT}/sendMessage",
-            data={'chat_id':CHAT,'text':text,'parse_mode':'HTML'})
+        requests.post(
+            f"https://api.telegram.org/bot{BOT}/sendMessage",
+            data=payload
+        )
     except:
         pass
 
@@ -162,6 +194,7 @@ def check_cmd(stats):
             msg = u.get("message",{})
             text = msg.get("text","")
             if text == "/status":
+                # Pesan status tidak perlu tombol inline
                 send_tg(get_status_message(stats))
     except:
         pass
@@ -288,12 +321,14 @@ async def monitor_sms_loop():
             if new:
                 for otp_data in new:
                     message_text = format_otp_message(otp_data)
-                    send_tg(message_text)
+                    # Kirim pesan dengan tombol inline (True)
+                    send_tg(message_text, with_inline_keyboard=True) 
                     total_sent += 1
         
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
             print(error_message)
+            # Pesan error tidak perlu tombol inline
             send_tg(f"⚠️ **Error Fetching SMS**: `{error_message}`")
 
 
