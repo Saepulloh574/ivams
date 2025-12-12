@@ -290,7 +290,7 @@ class SMSMonitor:
         if not self.page:
             await self.initialize() # Coba inisialisasi jika belum terhubung
 
-        # Lakukan refresh sebelum scraping untuk memastikan data terbaru
+        # Lakukan refresh sebelum scraping untuk memastikan data terbaru (Ini perlu untuk fungsi utama bot)
         await self.page.reload({'waitUntil': 'networkidle0'})
 
         html = await self.page.content()
@@ -419,18 +419,18 @@ def check_cmd(stats):
             chat_id = msg.get("chat", {}).get("id")
 
             # --- Perintah Admin ---
+            # HANYA RESPONS JIKA COMMAND DARI ADMIN
             if user_id == ADMIN_ID:
                 if text == "/status":
-                    # Kirim pesan status ke chat yang sama
+                    # Kirim pesan status ke chat yang sama (HANYA JIKA DIPERINTAHKAN)
                     requests.post(
                         f"https://api.telegram.org/bot{BOT}/sendMessage",
                         data={'chat_id': chat_id, 'text': get_status_message(stats), 'parse_mode': 'HTML'}
                     )
                 
-                # Tambahan baru: Perintah /refresh
+                # Perintah /refresh (HANYA JIKA DIPERINTAHKAN)
                 elif text == "/refresh":
                     send_tg("⏳ Executing page refresh and screenshot...", with_inline_keyboard=False)
-                    # Tugas asinkron perlu dijalankan dalam loop utama
                     asyncio.create_task(monitor.refresh_and_screenshot())
 
     except requests.exceptions.RequestException as e:
@@ -459,7 +459,7 @@ async def monitor_sms_loop():
                 print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram...")
                 for otp_data in new:
                     message_text = format_otp_message(otp_data)
-                    # Kirim pesan dengan tombol inline (True)
+                    # Kirim pesan dengan tombol inline (True) - OTOMATIS
                     send_tg(message_text, with_inline_keyboard=True)
                     total_sent += 1
 
@@ -479,11 +479,10 @@ async def monitor_sms_loop():
             "cache_size": len(otp_filter.cache)
         }
 
-        # check_cmd harus dijalankan di loop utama agar dapat mengontrol monitor
-        # Catatan: check_cmd sekarang memanggil fungsi requests.post secara sinkron
-        # dan membuat task asinkron untuk /refresh.
+        # check_cmd hanya memproses perintah, tidak mengirim status secara otomatis
         check_cmd(stats)
-        print(get_status_message(stats))
+        
+        # HILANGKAN print status otomatis ke konsol
 
         await asyncio.sleep(5) # Delay 5 detik sebelum cek berikutnya
 
@@ -492,7 +491,7 @@ if __name__ == "__main__":
         print("FATAL ERROR: Pastikan TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID ada di file .env.")
     else:
         print("Starting SMS Monitor Bot...")
-        # KIRIM PESAN AKTIVASI DI SINI
+        # KIRIM PESAN AKTIVASI DI AWAL - OTOMATIS
         send_tg("✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>", with_inline_keyboard=False)
         # Mulai loop asinkron
         asyncio.run(monitor_sms_loop())
