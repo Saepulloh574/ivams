@@ -519,3 +519,100 @@ CORS(app)
 
 @app.route('/api/status', methods=['GET'])
 def get_status_json():
+    """Mengembalikan data status bot dalam format JSON."""
+    update_global_status() 
+    return jsonify(BOT_STATUS)
+
+@app.route('/manual-check', methods=['GET'])
+def manual_check():
+    """Memanggil fetch_and_process_once di loop asinkron."""
+    if ADMIN_ID is None: return jsonify({"message": "Error: Admin ID not configured."}), 400
+    try:
+        # Gunakan threadsafe untuk menjalankan async function dari Flask thread
+        asyncio.run_coroutine_threadsafe(monitor.fetch_and_process_once(), asyncio.get_running_loop())
+        return jsonify({"message": "Manual check requested. Check Telegram for results."})
+    except RuntimeError:
+        # Ini terjadi jika asyncio loop belum berjalan atau sudah berhenti
+        return jsonify({"message": "Error: Asyncio loop is not running. Try refreshing the bot."}), 500
+
+@app.route('/telegram-status', methods=['GET'])
+def send_telegram_status_route():
+    """Memanggil fungsi untuk mengirim status ke Telegram."""
+    if ADMIN_ID is None: return jsonify({"message": "Error: Admin ID not configured."}), 400
+    
+    stats_msg = get_status_message(update_global_status())
+    send_tg(stats_msg, target_chat_id=ADMIN_ID)
+    
+    return jsonify({"message": "Status sent to Telegram Admin."})
+
+@app.route('/clear-cache', methods=['GET'])
+def clear_otp_cache_route():
+    """Membersihkan cache OTP."""
+    global otp_filter
+    otp_filter.cache = {}
+    otp_filter._save()
+    
+    update_global_status() 
+    return jsonify({"message": f"OTP Cache cleared. New size: {BOT_STATUS['cache_size']}."})
+
+@app.route('/test-message', methods=['GET'])
+def test_message_route():
+    """Mengirim pesan tes ke Telegram."""
+    test_msg = """🧪 <b>Test Message from Dashboard</b>
+
+🔢 OTP: <code>999999</code>
+📱 Number: <code>+1234567890</code>
+🌐 Service: <b>Dashboard Test</b>
+⏰ Time: Test Time"""
+    
+    send_tg(test_msg)
+    return jsonify({"message": "Test message sent to main channel."})
+
+@app.route('/start-monitor', methods=['GET'])
+def start_monitor_route():
+    BOT_STATUS["monitoring_active"] = True
+    return jsonify({"message": "Monitor status set to Running."})
+
+@app.route('/stop-monitor', methods=['GET'])
+def stop_monitor_route():
+    BOT_STATUS["monitoring_active"] = False
+    return jsonify({"message": "Monitor status set to Paused."})
+
+
+# ================= FUNGSI UTAMA START =================
+
+def run_flask():
+    """Fungsi untuk menjalankan Flask di thread terpisah."""
+    port = int(os.environ.get('PORT', 5000))
+    print(f"✅ Flask API running on http://0.0.0.0:{port}")
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
+if __name__ == "__main__":
+    if not BOT or not CHAT:
+        print("FATAL ERROR: Pastikan TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID ada di file .env.")
+    else:
+        print("Starting SMS Monitor Bot and Flask API...")
+        
+        # Ambil IP Publik RDP dari ENV atau gunakan placeholder
+        # PASTIKAN ANDA GANTI INI DI FILE .env
+        IP_PUBLIK_RDP = os.getenv("RDP_PUBLIC_IP", "IP_PUBLIK_ANDA_DISINI") 
+        api_url = f"http://{IP_PUBLIK_RDP}:5000"
+        print(f"API Base URL: {api_url}")
+
+        # 1. Mulai Flask di thread terpisah
+        flask_thread = Thread(target=run_flask)
+        flask_thread.daemon = True
+        flask_thread.start()
+        
+        # 2. Kirim Pesan Aktivasi Telegram
+        send_tg(f"✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>\nAPI Base URL: {api_url}\n(Gunakan URL ini di shared hosting Anda)", with_inline_keyboard=False)
+        
+        # 3. Mulai loop asinkron monitoring
+        try:
+            loop = asyncio.get_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(monitor_sms_loop())
+        except KeyboardInterrupt:
+            print("Bot shutting down...")
+        finally:
+            print("Bot core shutdown complete.")
