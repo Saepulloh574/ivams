@@ -12,6 +12,13 @@
             margin: 0;
             padding: 20px;
             min-height: 100vh;
+            
+            /* AUTO ZOOM (CSS TRANSFORM SCALE ke 67%) */
+            transform: scale(0.67);
+            transform-origin: 0 0;
+            width: calc(100% / 0.67);
+            height: calc(100% / 0.67);
+            min-height: 100vh;
         }
         .container {
             max-width: 800px;
@@ -166,7 +173,7 @@
             </div>
             
             <div class="buttons">
-                <a href="/manual-check" class="btn">🔍 Manual Check</a>
+                <a href="/manual-check" class="btn">🔄 Refresh & Screenshot</a> 
                 <a href="/test-message" class="btn success">📤 Test Message</a>
                 <a href="/telegram-status" class="btn">📊 Send Status</a>
                 <a href="/clear-cache" class="btn warning">🗑️ Clear Cache</a>
@@ -202,10 +209,9 @@
     </div>
 
     <script>
-        // BASE_API_URL DIHAPUS karena kita menggunakan path relatif (/)
-        
+        // Fungsi untuk mengambil data status bot
         function updateStatus() {
-            // Kita panggil langsung /api/status dari domain saat ini (Ngrok URL)
+            // Menggunakan AJAX Polling dengan path relatif
             const url = '/api/status?t=' + new Date().getTime(); 
 
             fetch(url)
@@ -218,7 +224,6 @@
                     return response.json()
                         .catch(() => {
                             return clonedResponse.text().then(text => {
-                                // Ini akan menangkap respons yang bukan JSON (misalnya error HTML dari Ngrok)
                                 throw new Error(`Response was HTML/Text, not JSON. Starts with: ${text.substring(0, 50)}...`);
                             });
                         });
@@ -240,15 +245,15 @@
                     // Update status bar color
                     const alertDiv = document.querySelector('.alert');
                     if (data.status.includes('Running')) {
-                        alertDiv.style.backgroundColor = '#d4edda'; // Greenish
+                        alertDiv.style.backgroundColor = '#d4edda';
                         alertDiv.style.borderColor = '#c3e6cb';
                         alertDiv.style.color = '#155724';
                     } else if (data.status.includes('FATAL')) {
-                        alertDiv.style.backgroundColor = '#f8d7da'; // Reddish
+                        alertDiv.style.backgroundColor = '#f8d7da';
                         alertDiv.style.borderColor = '#f5c6cb';
                         alertDiv.style.color = '#721c24';
                     } else {
-                        alertDiv.style.backgroundColor = '#d1ecf1'; // Blueish (default)
+                        alertDiv.style.backgroundColor = '#d1ecf1';
                         alertDiv.style.borderColor = '#bee5eb';
                         alertDiv.style.color = '#0c5460';
                     }
@@ -283,14 +288,14 @@
                 });
         }
 
-        // Update status immediately and then every 30 seconds
+        // Update status immediately and then every 30 seconds (AJAX POLLING)
         updateStatus();
-        setInterval(updateStatus, 30000);
+        setInterval(updateStatus, 30000); 
 
         // Tambahkan event listener untuk tombol-tombol agar memicu action di backend
         document.querySelectorAll('a.btn').forEach(button => {
             button.addEventListener('click', function(e) {
-                e.preventDefault(); // Mencegah navigasi langsung
+                e.preventDefault(); 
                 const href = this.getAttribute('href');
                 const actionName = this.textContent.trim();
                 
