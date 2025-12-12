@@ -8,10 +8,12 @@ import os
 import requests
 import time
 from dotenv import load_dotenv
+import socket # Digunakan untuk mendapatkan IP lokal (fallback)
 
-# --- Import Tambahan untuk Flask dan Threading ---
-from flask import Flask, jsonify, render_template
+# --- Import Tambahan untuk Flask, Threading, dan CORS ---
+from flask import Flask, jsonify
 from threading import Thread
+from flask_cors import CORS # WAJIB untuk diakses dari shared hosting
 # -------------------------------------------------
 
 # Muat variabel lingkungan dari file .env segera setelah import
@@ -34,6 +36,20 @@ LAST_ID = 0
 
 # ================= Utils =================
 
+def get_local_ip():
+    """Mencari IP address lokal perangkat untuk keperluan fallback."""
+    s = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80)) 
+        ip = s.getsockname()[0]
+        return ip
+    except Exception:
+        return "127.0.0.1" 
+    finally:
+        if s:
+            s.close()
+            
 def create_inline_keyboard():
     keyboard = {
         "inline_keyboard": [
@@ -233,7 +249,7 @@ OTP_MESSAGE_PATTERNS = [
 ]
 
 def find_clean_message(full_text):
-    for pattern in OTP_MESSAGE_PATTER1NS:
+    for pattern in OTP_MESSAGE_PATTERNS:
         match = re.search(pattern, full_text, re.I)
         if match: return match.group(1).strip()
     return None
@@ -373,7 +389,8 @@ class SMSMonitor:
         except Exception as e:
             error_message = f"Error during manual fetch/send: {e.__class__.__name__}: {e}"
             print(error_message)
-            send_tg(f"⚠️ **Error Manual Check**: `{error_message}`", target_chat_id=ADMIN_ID)
+            if ADMIN_ID is not None:
+                send_tg(f"⚠️ **Error Manual Check**: `{error_message}`", target_chat_id=ADMIN_ID)
 
 monitor = SMSMonitor()
 
@@ -430,7 +447,8 @@ def check_cmd(stats):
                     )
                 elif text == "/refresh":
                     send_tg("⏳ Executing page refresh and screenshot...", with_inline_keyboard=False, target_chat_id=chat_id)
-                    asyncio.create_task(monitor.refresh_and_screenshot(admin_chat_id=chat_id))
+                    # Gunakan threadsafe karena memanggil async dari sync thread
+                    asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=chat_id), asyncio.get_running_loop())
 
     except requests.exceptions.RequestException as e:
         print(f"❌ Error during getUpdates: {e}")
@@ -454,27 +472,31 @@ async def monitor_sms_loop():
 
     while True:
         try:
-            msgs = await monitor.fetch_sms()
-            new = otp_filter.filter(msgs)
+            if BOT_STATUS["monitoring_active"]:
+                msgs = await monitor.fetch_sms()
+                new = otp_filter.filter(msgs)
 
-            if new:
-                print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram...")
-                
-                if len(new) > 1:
-                    message_text = format_multiple_otps(new)
-                    send_tg(message_text, with_inline_keyboard=True)
-                    total_sent += len(new)
-                else:
-                    for otp_data in new:
-                        message_text = format_otp_message(otp_data)
+                if new:
+                    print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram...")
+                    
+                    if len(new) > 1:
+                        message_text = format_multiple_otps(new)
                         send_tg(message_text, with_inline_keyboard=True)
-                        total_sent += 1
-                
-                if ADMIN_ID is not None:
-                    print("⚙️ Executing automatic refresh and screenshot to admin...")
-                    await monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID)
-                else:
-                    print("⚠️ WARNING: ADMIN_ID not set. Skipping automatic refresh/screenshot.")
+                        total_sent += len(new)
+                    else:
+                        for otp_data in new:
+                            message_text = format_otp_message(otp_data)
+                            send_tg(message_text, with_inline_keyboard=True)
+                            total_sent += 1
+                    
+                    if ADMIN_ID is not None:
+                        print("⚙️ Executing automatic refresh and screenshot to admin...")
+                        await monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID)
+                    else:
+                        print("⚠️ WARNING: ADMIN_ID not set. Skipping automatic refresh/screenshot.")
+            else:
+                print("⏸️ Monitoring paused.")
+
 
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
@@ -487,103 +509,13 @@ async def monitor_sms_loop():
         
         await asyncio.sleep(5) 
 
-# ================= FLASK WEB SERVER UNTUK DASHBOARD =================
+# ================= FLASK WEB SERVER UNTUK API =================
 
 app = Flask(__name__)
+# WAJIB: Mengizinkan akses dari domain manapun (shared hosting Anda) ke API ini
+CORS(app) 
 
-@app.route('/', methods=['GET'])
-def dashboard_html():
-    """Menyajikan halaman HTML dashboard dari file templates/dashboard.html."""
-    return render_template('dashboard.html')
+# HAPUS: @app.route('/', methods=['GET']) dashboard_html
 
 @app.route('/api/status', methods=['GET'])
 def get_status_json():
-    """Mengembalikan data status bot dalam format JSON."""
-    update_global_status() 
-    return jsonify(BOT_STATUS)
-
-@app.route('/manual-check', methods=['GET'])
-def manual_check():
-    """Memanggil fetch_and_process_once di loop asinkron."""
-    try:
-        asyncio.run_coroutine_threadsafe(monitor.fetch_and_process_once(), asyncio.get_running_loop())
-        return jsonify({"message": "Manual check requested. Check Telegram for results."})
-    except RuntimeError:
-        return jsonify({"message": "Error: Asyncio loop is not running. Try refreshing the bot."}), 500
-
-@app.route('/telegram-status', methods=['GET'])
-def send_telegram_status_route():
-    """Memanggil fungsi untuk mengirim status ke Telegram."""
-    if ADMIN_ID is None:
-        return jsonify({"message": "Error: Admin ID not configured."}), 400
-    
-    stats_msg = get_status_message(update_global_status())
-    send_tg(stats_msg, target_chat_id=ADMIN_ID)
-    
-    return jsonify({"message": "Status sent to Telegram Admin."})
-
-@app.route('/clear-cache', methods=['GET'])
-def clear_otp_cache_route():
-    """Membersihkan cache OTP."""
-    global otp_filter
-    otp_filter.cache = {}
-    otp_filter._save()
-    
-    update_global_status() 
-    return jsonify({"message": f"OTP Cache cleared. New size: {BOT_STATUS['cache_size']}."})
-
-@app.route('/test-message', methods=['GET'])
-def test_message_route():
-    """Mengirim pesan tes ke Telegram."""
-    test_msg = """🧪 <b>Test Message from Dashboard</b>
-
-🔢 OTP: <code>999999</code>
-📱 Number: <code>+1234567890</code>
-🌐 Service: <b>Dashboard Test</b>
-⏰ Time: Test Time"""
-    
-    send_tg(test_msg)
-    return jsonify({"message": "Test message sent to main channel."})
-
-@app.route('/start-monitor', methods=['GET'])
-def start_monitor_route():
-    BOT_STATUS["monitoring_active"] = True
-    return jsonify({"message": "Monitor status set to Running."})
-
-@app.route('/stop-monitor', methods=['GET'])
-def stop_monitor_route():
-    BOT_STATUS["monitoring_active"] = False
-    return jsonify({"message": "Monitor status set to Paused."})
-
-
-# ================= FUNGSI UTAMA START =================
-
-def run_flask():
-    """Fungsi untuk menjalankan Flask di thread terpisah."""
-    port = int(os.environ.get('PORT', 5000))
-    print(f"✅ Flask Dashboard running on http://0.0.0.0:{port}")
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-if __name__ == "__main__":
-    if not BOT or not CHAT:
-        print("FATAL ERROR: Pastikan TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID ada di file .env.")
-    else:
-        print("Starting SMS Monitor Bot and Flask Dashboard...")
-        
-        # 1. Mulai Flask di thread terpisah
-        flask_thread = Thread(target=run_flask)
-        flask_thread.daemon = True
-        flask_thread.start()
-        
-        # 2. Kirim Pesan Aktivasi Telegram
-        send_tg("✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>\nDashboard: http://localhost:5000", with_inline_keyboard=False)
-        
-        # 3. Mulai loop asinkron monitoring
-        try:
-            loop = asyncio.get_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(monitor_sms_loop())
-        except KeyboardInterrupt:
-            print("Bot shutting down...")
-        finally:
-            print("Bot core shutdown complete.")
