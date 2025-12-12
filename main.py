@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 import socket 
 
 # --- Import Flask ---
-from flask import Flask, jsonify, render_template # render_template DITAMBAHKAN
+from flask import Flask, jsonify, render_template
 from threading import Thread
 # --------------------
 
@@ -34,7 +34,6 @@ except (ValueError, TypeError):
 LAST_ID = 0 
 
 # ================= Utils =================
-# ... (Semua fungsi utils tetap sama) ...
 
 def get_local_ip():
     """Mencari IP address lokal perangkat untuk keperluan fallback."""
@@ -363,37 +362,12 @@ class SMSMonitor:
                 os.remove(screenshot_filename)
                 print(f"🗑️ Cleaned up {screenshot_filename}")
     
-    async def fetch_and_process_once(self):
-        global total_sent
-        try:
-            msgs = await self.fetch_sms()
-            new = otp_filter.filter(msgs)
-
-            if new:
-                print(f"[Manual Check] Found {len(new)} new OTP(s). Sending to Telegram...")
-                
-                if len(new) > 1:
-                    message_text = format_multiple_otps(new)
-                    send_tg(message_text, with_inline_keyboard=True)
-                    total_sent += len(new)
-                else:
-                    for otp_data in new:
-                        message_text = format_otp_message(otp_data)
-                        send_tg(message_text, with_inline_keyboard=True)
-                        total_sent += 1
-                
-                if ADMIN_ID is not None:
-                    await self.refresh_and_screenshot(admin_chat_id=ADMIN_ID)
-                    
-                update_global_status()
-            else:
-                send_tg("🔍 **Manual Check**: Tidak ditemukan OTP baru.", target_chat_id=ADMIN_ID)
-
-        except Exception as e:
-            error_message = f"Error during manual fetch/send: {e.__class__.__name__}: {e}"
-            print(error_message)
-            if ADMIN_ID is not None:
-                send_tg(f"⚠️ **Error Manual Check**: `{error_message}`", target_chat_id=ADMIN_ID)
+    async def fetch_and_process_once(self, admin_chat_id):
+        # Fungsi ini hanya dipanggil oleh MONITOR LOOP, bukan tombol /manual-check lagi.
+        # Digabungkan untuk tujuan testing, tetapi tidak digunakan oleh route Flask.
+        # Jika Anda ingin manual check tetap ada, Anda bisa buat route baru.
+        # Karena instruksi adalah mengubah manual check menjadi refresh, fungsi ini tidak relevan lagi untuk route Flask.
+        pass
 
 monitor = SMSMonitor()
 
@@ -504,9 +478,6 @@ async def monitor_sms_loop():
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
             print(error_message)
-            # Karena ini error loop utama, biarkan bot terus berjalan
-            # if "pyppeteer" not in str(e).lower() and "browser" not in str(e).lower():
-            #     send_tg(f"⚠️ **Error Fetching SMS**: `{error_message}`")
 
         stats = update_global_status()
         check_cmd(stats)
@@ -515,7 +486,7 @@ async def monitor_sms_loop():
 
 # ================= FLASK WEB SERVER UNTUK API DAN DASHBOARD =================
 
-app = Flask(__name__, template_folder='templates') # <-- Tentukan folder template
+app = Flask(__name__, template_folder='templates')
 
 # 1. ROUTE UTAMA (UNTUK DASHBOARD)
 @app.route('/', methods=['GET'])
@@ -530,14 +501,16 @@ def get_status_json():
     update_global_status() 
     return jsonify(BOT_STATUS)
 
+# ROUTE INI DIUBAH MENJADI FUNGSI REFRESH & SCREENSHOT SAJA
 @app.route('/manual-check', methods=['GET'])
 def manual_check():
-    """Memanggil fetch_and_process_once di loop asinkron."""
-    if ADMIN_ID is None: return jsonify({"message": "Error: Admin ID not configured."}), 400
+    """Memanggil refresh_and_screenshot di loop asinkron."""
+    if ADMIN_ID is None: return jsonify({"message": "Error: Admin ID not configured for this action."}), 400
     try:
+        # Panggil refresh_and_screenshot, yang me-reload dan mengirim SS ke admin
         loop = asyncio.get_event_loop()
-        asyncio.run_coroutine_threadsafe(monitor.fetch_and_process_once(), loop)
-        return jsonify({"message": "Manual check requested. Check Telegram for results."})
+        asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID), loop)
+        return jsonify({"message": "Halaman IVASMS Refresh & Screenshot sedang dikirim ke Admin Telegram."})
     except RuntimeError:
         return jsonify({"message": "Error: Asyncio loop is not running. Try refreshing the bot."}), 500
 
@@ -628,4 +601,3 @@ if __name__ == "__main__":
             print("Bot shutting down...")
         finally:
             print("Bot core shutdown complete.")
-
