@@ -138,11 +138,15 @@ class OTPFilter:
     def _load(self):
         if os.path.exists(self.file):
             try:
-                # Pastikan hanya memuat jika file tidak kosong
+                # Menangani file kosong atau error JSONDecodeError
                 if os.stat(self.file).st_size > 0:
-                    return json.load(open(self.file))
+                    with open(self.file, 'r') as f:
+                        return json.load(f)
                 else:
                     return {}
+            except json.JSONDecodeError as e:
+                print(f"⚠️ WARNING: Cache file '{self.file}' corrupted. Resetting cache. Error: {e}")
+                return {}
             except Exception as e:
                 print(f"Error loading cache: {e}")
                 return {}
@@ -290,9 +294,11 @@ class SMSMonitor:
         if not self.page:
             await self.initialize() # Coba inisialisasi jika belum terhubung
 
-        # Lakukan refresh sebelum scraping untuk memastikan data terbaru (Ini perlu untuk fungsi utama bot)
-        await self.page.reload({'waitUntil': 'networkidle0'})
-
+        # ====================================================================
+        # !!! BARIS REFRESH OTOMATIS DIHAPUS !!!
+        # Halaman hanya akan direfresh jika ada perintah /refresh.
+        # ====================================================================
+        
         html = await self.page.content()
         soup = BeautifulSoup(html, "html.parser")
 
@@ -367,7 +373,7 @@ class SMSMonitor:
         screenshot_filename = f"screenshot_{int(time.time())}.png"
         
         try:
-            # 1. Refresh halaman
+            # 1. Refresh halaman (HANYA TERJADI DI SINI)
             print("🔄 Performing page refresh...")
             await self.page.reload({'waitUntil': 'networkidle0'})
             
@@ -419,10 +425,9 @@ def check_cmd(stats):
             chat_id = msg.get("chat", {}).get("id")
 
             # --- Perintah Admin ---
-            # HANYA RESPONS JIKA COMMAND DARI ADMIN
             if user_id == ADMIN_ID:
                 if text == "/status":
-                    # Kirim pesan status ke chat yang sama (HANYA JIKA DIPERINTAHKAN)
+                    # Kirim pesan status ke chat yang sama
                     requests.post(
                         f"https://api.telegram.org/bot{BOT}/sendMessage",
                         data={'chat_id': chat_id, 'text': get_status_message(stats), 'parse_mode': 'HTML'}
@@ -452,6 +457,7 @@ async def monitor_sms_loop():
 
     while True:
         try:
+            # Sekarang, fetch_sms HANYA mengambil konten HTML TANPA merefresh
             msgs = await monitor.fetch_sms()
             new = otp_filter.filter(msgs)
 
@@ -479,10 +485,9 @@ async def monitor_sms_loop():
             "cache_size": len(otp_filter.cache)
         }
 
-        # check_cmd hanya memproses perintah, tidak mengirim status secara otomatis
         check_cmd(stats)
         
-        # HILANGKAN print status otomatis ke konsol
+        # HILANGKAN print status otomatis ke konsol, hanya cetak saat dipanggil /status
 
         await asyncio.sleep(5) # Delay 5 detik sebelum cek berikutnya
 
