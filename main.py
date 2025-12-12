@@ -253,7 +253,7 @@ OTP_MESSAGE_PATTERNS = [
 ]
 
 def find_clean_message(full_text):
-    for pattern in OTP_MESSAGE_PATTERpiNS:
+    for pattern in OTP_MESSAGE_PATTERNS:
         match = re.search(pattern, full_text, re.I)
         if match: return match.group(1).strip()
     return None
@@ -283,12 +283,9 @@ class SMSMonitor:
     async def fetch_sms(self):
         if not self.page: await self.initialize()
         
-        # Lakukan reload ringan untuk mendapatkan data terbaru
-        try:
-             await self.page.reload({'waitUntil': 'domcontentloaded'})
-        except Exception as e:
-            print(f"⚠️ WARNING: Gagal me-reload halaman. Menggunakan konten lama. Error: {e}")
-            
+        # [PERUBAHAN]: Menghapus baris reload otomatis di sini
+        # Baris berikut telah dihapus: await self.page.reload({'waitUntil': 'domcontentloaded'})
+        
         html = await self.page.content()
         soup = BeautifulSoup(html, "html.parser")
         messages = []
@@ -362,7 +359,7 @@ class SMSMonitor:
         screenshot_filename = f"screenshot_{int(time.time())}.png"
         try:
             print("🔄 Performing page refresh...")
-            # Menggunakan networkidle0 agar screenshot menunggu pemuatan penuh
+            # Ini adalah refresh yang disengaja untuk membersihkan halaman
             await self.page.reload({'waitUntil': 'networkidle0'}) 
             print(f"📸 Taking screenshot: {screenshot_filename}")
             await self.page.screenshot({'path': screenshot_filename, 'fullPage': True})
@@ -437,7 +434,7 @@ def check_cmd(stats):
                     )
                 elif text == "/refresh":
                     send_tg("⏳ Executing page refresh and screenshot...", with_inline_keyboard=False, target_chat_id=chat_id)
-                    # Menggunakan GLOBAL_ASYNC_LOOP yang sudah diset di main thread
+                    # Ini adalah refresh yang dipicu oleh perintah admin
                     if GLOBAL_ASYNC_LOOP:
                         asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=chat_id), GLOBAL_ASYNC_LOOP)
                     else:
@@ -482,6 +479,7 @@ async def monitor_sms_loop():
                             send_tg(message_text, with_inline_keyboard=True)
                             total_sent += 1
                     
+                    # [PERUBAHAN]: Refresh hanya dilakukan di sini (setelah pesan terkirim)
                     if ADMIN_ID is not None:
                         print("⚙️ Executing automatic refresh and screenshot to admin...")
                         await monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID)
@@ -520,21 +518,18 @@ def get_status_json():
 # ROUTE INI DIUBAH MENJADI FUNGSI REFRESH & SCREENSHOT SAJA
 @app.route('/manual-check', methods=['GET'])
 def manual_check():
-    """Memanggil refresh_and_screenshot di loop asinkron."""
+    """Memanggil refresh_and_screenshot di loop asinkron (dipicu dari Dashboard)."""
     if ADMIN_ID is None: return jsonify({"message": "Error: Admin ID not configured for this action."}), 400
     if GLOBAL_ASYNC_LOOP is None:
         return jsonify({"message": "Error: Asyncio loop not initialized."}), 500
         
     try:
-        # Panggil refresh_and_screenshot, yang me-reload dan mengirim SS ke admin
-        # Menggunakan GLOBAL_ASYNC_LOOP yang sudah diset
+        # Panggil refresh_and_screenshot
         asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID), GLOBAL_ASYNC_LOOP)
         return jsonify({"message": "Halaman IVASMS Refresh & Screenshot sedang dikirim ke Admin Telegram."})
     except RuntimeError as e:
-        # Menangkap error jika loop tidak ditemukan/berjalan (walaupun sudah diset global)
         return jsonify({"message": f"Fatal Error: Asyncio loop issue ({e.__class__.__name__}). Cek log RDP Anda."}), 500
     except Exception as e:
-        # Menangkap error lain (Pyppeteer, dll.)
         return jsonify({"message": f"External Error: Gagal menjalankan refresh. Cek log RDP Anda: {e.__class__.__name__}"}), 500
 
 @app.route('/telegram-status', methods=['GET'])
