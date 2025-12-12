@@ -196,17 +196,33 @@
         </div>
         
         <div class="footer">
-            <p>💡 <strong>Tip:</strong> Use UptimeRobot to ping this dashboard every 5 minutes to keep the bot alive on free hosting platforms.</p>
+            <p>💡 <strong>PENTING:</strong> Akses Dashboard ini melalui **Ngrok URL** aktif Anda (`https://[ngrok-url-anda]/`). Pastikan Ngrok berjalan di RDP (`ngrok http 5000`).</p>
             <p>🔐 <strong>Security:</strong> This bot should only be used for authorized accounts and ethical purposes.</p>
         </div>
     </div>
 
     <script>
-        // Auto-refresh status setiap 30 detik
+        // BASE_API_URL DIHAPUS karena kita menggunakan path relatif (/)
+        
         function updateStatus() {
-            // Meminta data dari endpoint Flask /api/status
-            fetch('/api/status')
-                .then(response => response.json())
+            // Kita panggil langsung /api/status dari domain saat ini (Ngrok URL)
+            const url = '/api/status?t=' + new Date().getTime(); 
+
+            fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP Error: ${response.status} (${response.statusText})`);
+                    }
+                    
+                    const clonedResponse = response.clone();
+                    return response.json()
+                        .catch(() => {
+                            return clonedResponse.text().then(text => {
+                                // Ini akan menangkap respons yang bukan JSON (misalnya error HTML dari Ngrok)
+                                throw new Error(`Response was HTML/Text, not JSON. Starts with: ${text.substring(0, 50)}...`);
+                            });
+                        });
+                })
                 .then(data => {
                     // Update Status Cards
                     document.getElementById('botStatus').textContent = data.status || 'Unknown';
@@ -236,11 +252,34 @@
                         alertDiv.style.borderColor = '#bee5eb';
                         alertDiv.style.color = '#0c5460';
                     }
-
                 })
                 .catch(error => {
                     console.error('Error updating status:', error);
-                    document.getElementById('botStatus').textContent = 'Web Server Connection Error';
+                    const logs = document.getElementById('consoleLogs');
+                    const timestamp = new Date().toLocaleTimeString();
+                    
+                    let displayMessage;
+                    if (error.message.includes('Response was HTML/Text')) {
+                        displayMessage = `❌ [${timestamp}] API Error: Flask/Ngrok mengembalikan HTML. **Cek Ngrok/Bot di RDP!**`;
+                    } else if (error.message.includes('Failed to fetch')) {
+                         displayMessage = `❌ [${timestamp}] Network Error: Gagal konek. Ngrok mati/URL salah.`;
+                    } else {
+                        displayMessage = `❌ [${timestamp}] API Error: ${error.message}.`;
+                    }
+
+                    logs.innerHTML += `<div style="color:red;">${displayMessage}</div>`;
+                    logs.scrollTop = logs.scrollHeight;
+                    document.getElementById('botStatus').textContent = 'API Connection Error';
+                    
+                    // Reset card values if connection error
+                    document.getElementById('uptime').textContent = '--';
+                    document.getElementById('otpsSent').textContent = '--';
+                    document.getElementById('lastCheck').textContent = '--';
+                    document.getElementById('cacheSize').textContent = '--';
+                    const alertDiv = document.querySelector('.alert');
+                    alertDiv.style.backgroundColor = '#f8d7da'; 
+                    alertDiv.style.borderColor = '#f5c6cb';
+                    alertDiv.style.color = '#721c24';
                 });
         }
 
@@ -255,9 +294,14 @@
                 const href = this.getAttribute('href');
                 const actionName = this.textContent.trim();
                 
-                // Kirim request ke backend tanpa menunggu response
-                fetch(href)
-                    .then(response => response.json())
+                // Kirim request ke backend API (menggunakan path relatif!)
+                fetch(href) 
+                    .then(response => {
+                        if (!response.ok) {
+                             throw new Error(`HTTP Error: ${response.status} (${response.statusText})`);
+                        }
+                        return response.json()
+                    })
                     .then(data => {
                         const logs = document.getElementById('consoleLogs');
                         const timestamp = new Date().toLocaleTimeString();
@@ -269,7 +313,7 @@
                     .catch(error => {
                         const logs = document.getElementById('consoleLogs');
                         const timestamp = new Date().toLocaleTimeString();
-                        logs.innerHTML += `<div>❌ [${timestamp}] Action: ${actionName} - ERROR: ${error.message || 'Failed to connect'}</div>`;
+                        logs.innerHTML += `<div style="color:red;">❌ [${timestamp}] Action: ${actionName} - ERROR: ${error.message}</div>`;
                         logs.scrollTop = logs.scrollHeight;
                     });
             });
