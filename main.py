@@ -8,11 +8,11 @@ import os
 import requests
 import time
 from dotenv import load_dotenv
-import socket 
+import socket
+from threading import Thread, current_thread
 
 # --- Import Flask ---
 from flask import Flask, jsonify, render_template
-from threading import Thread
 # --------------------
 
 # Muat variabel lingkungan dari file .env
@@ -31,7 +31,10 @@ except (ValueError, TypeError):
     print("⚠️ WARNING: TELEGRAM_ADMIN_ID tidak valid. Perintah admin dinonaktifkan.")
     ADMIN_ID = None
 
-LAST_ID = 0 
+LAST_ID = 0
+
+# ================= Global State for Asyncio Loop =================
+GLOBAL_ASYNC_LOOP = None # Variabel global untuk menyimpan event loop utama
 
 # ================= Utils =================
 
@@ -363,11 +366,7 @@ class SMSMonitor:
                 print(f"🗑️ Cleaned up {screenshot_filename}")
     
     async def fetch_and_process_once(self, admin_chat_id):
-        # Fungsi ini hanya dipanggil oleh MONITOR LOOP, bukan tombol /manual-check lagi.
-        # Digabungkan untuk tujuan testing, tetapi tidak digunakan oleh route Flask.
-        # Jika Anda ingin manual check tetap ada, Anda bisa buat route baru.
-        # Karena instruksi adalah mengubah manual check menjadi refresh, fungsi ini tidak relevan lagi untuk route Flask.
-        pass
+        pass # Fungsi ini tidak lagi digunakan oleh Flask route.
 
 monitor = SMSMonitor()
 
@@ -424,8 +423,11 @@ def check_cmd(stats):
                     )
                 elif text == "/refresh":
                     send_tg("⏳ Executing page refresh and screenshot...", with_inline_keyboard=False, target_chat_id=chat_id)
-                    loop = asyncio.get_event_loop() 
-                    asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=chat_id), loop)
+                    # Menggunakan GLOBAL_ASYNC_LOOP yang sudah diset di main thread
+                    if GLOBAL_ASYNC_LOOP:
+                        asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=chat_id), GLOBAL_ASYNC_LOOP)
+                    else:
+                        send_tg("❌ Loop error: Global loop not set.", target_chat_id=chat_id)
 
     except requests.exceptions.RequestException as e:
         print(f"❌ Error during getUpdates: {e}")
@@ -506,13 +508,20 @@ def get_status_json():
 def manual_check():
     """Memanggil refresh_and_screenshot di loop asinkron."""
     if ADMIN_ID is None: return jsonify({"message": "Error: Admin ID not configured for this action."}), 400
+    if GLOBAL_ASYNC_LOOP is None:
+        return jsonify({"message": "Error: Asyncio loop not initialized."}), 500
+        
     try:
         # Panggil refresh_and_screenshot, yang me-reload dan mengirim SS ke admin
-        loop = asyncio.get_event_loop()
-        asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID), loop)
+        # Menggunakan GLOBAL_ASYNC_LOOP yang sudah diset
+        asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID), GLOBAL_ASYNC_LOOP)
         return jsonify({"message": "Halaman IVASMS Refresh & Screenshot sedang dikirim ke Admin Telegram."})
-    except RuntimeError:
-        return jsonify({"message": "Error: Asyncio loop is not running. Try refreshing the bot."}), 500
+    except RuntimeError as e:
+        # Menangkap error jika loop tidak ditemukan/berjalan (walaupun sudah diset global)
+        return jsonify({"message": f"Fatal Error: Asyncio loop issue ({e.__class__.__name__}). Cek log RDP Anda."}), 500
+    except Exception as e:
+        # Menangkap error lain (Pyppeteer, dll.)
+        return jsonify({"message": f"External Error: Gagal menjalankan refresh. Cek log RDP Anda: {e.__class__.__name__}"}), 500
 
 @app.route('/telegram-status', methods=['GET'])
 def send_telegram_status_route():
@@ -534,15 +543,21 @@ def clear_otp_cache_route():
     update_global_status() 
     return jsonify({"message": f"OTP Cache cleared. New size: {BOT_STATUS['cache_size']}."})
 
+# 💡 PERUBAHAN DI SINI: Menggunakan format_otp_message
 @app.route('/test-message', methods=['GET'])
 def test_message_route():
-    """Mengirim pesan tes ke Telegram."""
-    test_msg = """🧪 <b>Test Message from Dashboard</b>
-
-🔢 OTP: <code>999999</code>
-📱 Number: <code>+1234567890</code>
-🌐 Service: <b>Dashboard Test</b>
-⏰ Time: Test Time"""
+    """Mengirim pesan tes ke Telegram menggunakan format OTP."""
+    test_data = {
+        "otp": "999999",
+        "phone": "+6281234567890",
+        "service": "Dashboard Test",
+        "range": "RANGE 0-0",
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "raw_message": "FB-999999 adalah kode konfirmasi Facebook anda (Pesan Tes)."
+    }
+    
+    # Gunakan format_otp_message dan ubah header agar jelas ini adalah tes
+    test_msg = format_otp_message(test_data).replace("🔐 <b>New OTP Received</b>", "🧪 <b>TEST MESSAGE FROM DASHBOARD</b>")
     
     send_tg(test_msg)
     return jsonify({"message": "Test message sent to main channel."})
@@ -563,9 +578,15 @@ def stop_monitor_route():
 def run_flask():
     """Fungsi untuk menjalankan Flask di thread terpisah."""
     port = int(os.environ.get('PORT', 5000))
+    
+    # Menetapkan loop Asyncio ke thread Flask untuk menghindari RuntimeError
+    global GLOBAL_ASYNC_LOOP
+    if GLOBAL_ASYNC_LOOP and not asyncio._get_running_loop():
+        asyncio.set_event_loop(GLOBAL_ASYNC_LOOP) 
+        print(f"✅ Async loop successfully set for Flask thread: {current_thread().name}")
+        
     print(f"✅ Flask API & Dashboard running on http://127.0.0.1:{port}")
     
-    # Menggunakan host='127.0.0.1' agar Ngrok lebih mudah connect.
     app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
@@ -581,10 +602,14 @@ if __name__ == "__main__":
         print("=======================================================\n")
 
         try:
+            # Dapatkan atau buat loop utama
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+        
+        # ⚠️ BARIS PENTING: Simpan loop ke global variable
+        GLOBAL_ASYNC_LOOP = loop 
         
         # 1. Mulai Flask di thread terpisah
         flask_thread = Thread(target=run_flask)
