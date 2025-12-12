@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 import socket 
 
 # --- Import Tambahan untuk Flask, Threading, dan CORS ---
+# render_template DIHAPUS karena Flask tidak melayani HTML
 from flask import Flask, jsonify
 from threading import Thread
 from flask_cors import CORS 
@@ -208,7 +209,7 @@ def send_tg(text, with_inline_keyboard=False, target_chat_id=None):
         response = requests.post(
             f"https://api.telegram.org/bot{BOT}/sendMessage",
             data=payload,
-            timeout=15  # <-- DITINGKATKAN MENJADI 15 DETIK
+            timeout=15  
         )
         if not response.ok:
             print(f"⚠️ Telegram API Error ({response.status_code}): {response.text}")
@@ -431,7 +432,7 @@ def check_cmd(stats):
     try:
         upd = requests.get(
             f"https://api.telegram.org/bot{BOT}/getUpdates?offset={LAST_ID+1}",
-            timeout=15  # <-- DITINGKATKAN MENJADI 15 DETIK
+            timeout=15  
         ).json()
 
         for u in upd.get("result",[]):
@@ -449,8 +450,8 @@ def check_cmd(stats):
                     )
                 elif text == "/refresh":
                     send_tg("⏳ Executing page refresh and screenshot...", with_inline_keyboard=False, target_chat_id=chat_id)
-                    # Gunakan threadsafe karena memanggil async dari sync thread
-                    asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=chat_id), asyncio.get_running_loop())
+                    loop = asyncio.get_event_loop() 
+                    asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=chat_id), loop)
 
     except requests.exceptions.RequestException as e:
         print(f"❌ Error during getUpdates: {e}")
@@ -514,8 +515,10 @@ async def monitor_sms_loop():
 # ================= FLASK WEB SERVER UNTUK API =================
 
 app = Flask(__name__)
-# WAJIB: Mengizinkan akses dari domain manapun (shared hosting Anda) ke API ini
+# WAJIB: Mengizinkan akses dari domain manapun (Shared Hosting Anda) ke API ini
 CORS(app) 
+
+# Catatan: Route '/' TIDAK ADA di sini karena Dashboard di-host di Shared Hosting.
 
 @app.route('/api/status', methods=['GET'])
 def get_status_json():
@@ -528,7 +531,8 @@ def manual_check():
     """Memanggil fetch_and_process_once di loop asinkron."""
     if ADMIN_ID is None: return jsonify({"message": "Error: Admin ID not configured."}), 400
     try:
-        asyncio.run_coroutine_threadsafe(monitor.fetch_and_process_once(), asyncio.get_running_loop())
+        loop = asyncio.get_event_loop()
+        asyncio.run_coroutine_threadsafe(monitor.fetch_and_process_once(), loop)
         return jsonify({"message": "Manual check requested. Check Telegram for results."})
     except RuntimeError:
         return jsonify({"message": "Error: Asyncio loop is not running. Try refreshing the bot."}), 500
@@ -597,18 +601,22 @@ if __name__ == "__main__":
         print("     ngrok http 5000")
         print("=======================================================\n")
 
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
         # 1. Mulai Flask di thread terpisah
         flask_thread = Thread(target=run_flask)
         flask_thread.daemon = True
         flask_thread.start()
         
-        # 2. Kirim Pesan Aktivasi Telegram (Hanya pesan status)
+        # 2. Kirim Pesan Aktivasi Telegram 
         send_tg("✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>", with_inline_keyboard=False)
         
         # 3. Mulai loop asinkron monitoring
         try:
-            loop = asyncio.get_event_loop()
-            asyncio.set_event_loop(loop)
             loop.run_until_complete(monitor_sms_loop())
         except KeyboardInterrupt:
             print("Bot shutting down...")
