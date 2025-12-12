@@ -10,14 +10,12 @@ import time
 from dotenv import load_dotenv
 import socket 
 
-# --- Import Tambahan untuk Flask, Threading, dan CORS ---
-# render_template DIHAPUS karena Flask tidak melayani HTML
-from flask import Flask, jsonify
+# --- Import Flask ---
+from flask import Flask, jsonify, render_template # render_template DITAMBAHKAN
 from threading import Thread
-from flask_cors import CORS 
-# -------------------------------------------------
+# --------------------
 
-# Muat variabel lingkungan dari file .env segera setelah import
+# Muat variabel lingkungan dari file .env
 load_dotenv()
 
 # ================= Konstanta Telegram untuk Tombol =================
@@ -36,6 +34,7 @@ except (ValueError, TypeError):
 LAST_ID = 0 
 
 # ================= Utils =================
+# ... (Semua fungsi utils tetap sama) ...
 
 def get_local_ip():
     """Mencari IP address lokal perangkat untuk keperluan fallback."""
@@ -148,6 +147,7 @@ def get_status_message(stats):
 <i>Bot is running</i>"""
 
 # ================= OTP Filter Class =================
+
 class OTPFilter:
     def __init__(self, file='otp_cache.json', expire=30):
         self.file = file
@@ -504,22 +504,26 @@ async def monitor_sms_loop():
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
             print(error_message)
-            if "pyppeteer" not in str(e).lower() and "browser" not in str(e).lower():
-                send_tg(f"⚠️ **Error Fetching SMS**: `{error_message}`")
+            # Karena ini error loop utama, biarkan bot terus berjalan
+            # if "pyppeteer" not in str(e).lower() and "browser" not in str(e).lower():
+            #     send_tg(f"⚠️ **Error Fetching SMS**: `{error_message}`")
 
         stats = update_global_status()
         check_cmd(stats)
         
         await asyncio.sleep(5) 
 
-# ================= FLASK WEB SERVER UNTUK API =================
+# ================= FLASK WEB SERVER UNTUK API DAN DASHBOARD =================
 
-app = Flask(__name__)
-# WAJIB: Mengizinkan akses dari domain manapun (Shared Hosting Anda) ke API ini
-CORS(app) 
+app = Flask(__name__, template_folder='templates') # <-- Tentukan folder template
 
-# Catatan: Route '/' TIDAK ADA di sini karena Dashboard di-host di Shared Hosting.
+# 1. ROUTE UTAMA (UNTUK DASHBOARD)
+@app.route('/', methods=['GET'])
+def index():
+    """Melayani file dashboard.html."""
+    return render_template('dashboard.html')
 
+# 2. ROUTE API (UNTUK DIPANGGIL OLEH JAVASCRIPT DI dashboard.html)
 @app.route('/api/status', methods=['GET'])
 def get_status_json():
     """Mengembalikan data status bot dalam format JSON."""
@@ -586,8 +590,10 @@ def stop_monitor_route():
 def run_flask():
     """Fungsi untuk menjalankan Flask di thread terpisah."""
     port = int(os.environ.get('PORT', 5000))
-    print(f"✅ Flask API running on http://0.0.0.0:{port}")
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    print(f"✅ Flask API & Dashboard running on http://127.0.0.1:{port}")
+    
+    # Menggunakan host='127.0.0.1' agar Ngrok lebih mudah connect.
+    app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
     if not BOT or not CHAT:
@@ -622,3 +628,4 @@ if __name__ == "__main__":
             print("Bot shutting down...")
         finally:
             print("Bot core shutdown complete.")
+
