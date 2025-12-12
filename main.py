@@ -124,6 +124,7 @@ def extract_otp_from_text(text):
     for p in patterns:
         m = re.search(p, text, re.I)
         if m:
+            # Memastikan 4 digit bukan tahun, dan menerima 5 atau 6 digit
             if (len(m.group(1)) == 4 and '20' not in m.group(1)) or len(m.group(1)) > 4:
                 return m.group(1)
     return None
@@ -252,7 +253,7 @@ OTP_MESSAGE_PATTERNS = [
 ]
 
 def find_clean_message(full_text):
-    for pattern in OTP_MESSAGE_PATTERNS:
+    for pattern in OTP_MESSAGE_PATTERpiNS:
         match = re.search(pattern, full_text, re.I)
         if match: return match.group(1).strip()
     return None
@@ -281,10 +282,18 @@ class SMSMonitor:
 
     async def fetch_sms(self):
         if not self.page: await self.initialize()
+        
+        # Lakukan reload ringan untuk mendapatkan data terbaru
+        try:
+             await self.page.reload({'waitUntil': 'domcontentloaded'})
+        except Exception as e:
+            print(f"⚠️ WARNING: Gagal me-reload halaman. Menggunakan konten lama. Error: {e}")
+            
         html = await self.page.content()
         soup = BeautifulSoup(html, "html.parser")
         messages = []
 
+        # ================= 1. AMBIL DARI STRUKTUR TABLE NORMAL (LOGIKA DIPERBAIKI) =================
         tables = soup.find_all("table")
         for tb in tables:
             rows = tb.find_all("tr")[1:]
@@ -292,8 +301,11 @@ class SMSMonitor:
                 tds = r.find_all("td")
                 if len(tds) >= 3:
                     td_message = tds[2]
+                    
+                    # LOGIKA SCRAPING YANG LEBIH ANDAL: Mengambil konten string murni saja
                     raw_contents = [c.strip() for c in td_message.contents if isinstance(c, str)]
                     raw = " ".join(raw_contents).strip()
+                    
                     otp = extract_otp_from_text(raw)
                     if otp:
                         service_raw = tds[1].get_text(strip=True)
@@ -307,6 +319,7 @@ class SMSMonitor:
                             "raw_message": raw
                         })
 
+        # ================= 2. AMBIL DARI STRUKTUR DIV BARU (LOGIKA ASLI) =================
         flex_boxes = soup.find_all("div", class_="flex-1 ml-3")
         for box in flex_boxes:
             h6 = box.find("h6")
@@ -349,7 +362,8 @@ class SMSMonitor:
         screenshot_filename = f"screenshot_{int(time.time())}.png"
         try:
             print("🔄 Performing page refresh...")
-            await self.page.reload({'waitUntil': 'networkidle0'})
+            # Menggunakan networkidle0 agar screenshot menunggu pemuatan penuh
+            await self.page.reload({'waitUntil': 'networkidle0'}) 
             print(f"📸 Taking screenshot: {screenshot_filename}")
             await self.page.screenshot({'path': screenshot_filename, 'fullPage': True})
             print("📤 Sending screenshot to Admin Telegram...")
@@ -366,7 +380,7 @@ class SMSMonitor:
                 print(f"🗑️ Cleaned up {screenshot_filename}")
     
     async def fetch_and_process_once(self, admin_chat_id):
-        pass # Fungsi ini tidak lagi digunakan oleh Flask route.
+        pass # Fungsi ini tidak lagi digunakan.
 
 monitor = SMSMonitor()
 
