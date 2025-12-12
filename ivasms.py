@@ -160,7 +160,7 @@ otp_filter = OTPFilter()
 
 # ================= Telegram =================
 BOT = "7562117237:AAFQnb5aCmeSHHi_qAJz3vkoX4HbNGohe38"
-CHAT = "7184123643"
+CHAT = "-1003492226491"
 LAST_ID = 0
 
 # --- FUNGSI send_tg YANG DIMODIFIKASI ---
