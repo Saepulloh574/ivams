@@ -8,12 +8,12 @@ import os
 import requests
 import time
 from dotenv import load_dotenv
-import socket # Digunakan untuk mendapatkan IP lokal (fallback)
+import socket 
 
 # --- Import Tambahan untuk Flask, Threading, dan CORS ---
 from flask import Flask, jsonify
 from threading import Thread
-from flask_cors import CORS # WAJIB untuk diakses dari shared hosting
+from flask_cors import CORS 
 # -------------------------------------------------
 
 # Muat variabel lingkungan dari file .env segera setelah import
@@ -261,6 +261,8 @@ class SMSMonitor:
         self.page = None
 
     async def initialize(self):
+        # PASTIKAN ANDA SUDAH MENJALANKAN CHROME DENGAN ARGUMEN INI DI RDP:
+        # chrome.exe --remote-debugging-port=9222
         self.browser = await connect(browserURL="http://127.0.0.1:9222")
         pages = await self.browser.pages()
         page = None
@@ -593,11 +595,14 @@ if __name__ == "__main__":
     else:
         print("Starting SMS Monitor Bot and Flask API...")
         
-        # Ambil IP Publik RDP dari ENV atau gunakan placeholder
-        # PASTIKAN ANDA GANTI INI DI FILE .env
-        IP_PUBLIK_RDP = os.getenv("RDP_PUBLIC_IP", "IP_PUBLIK_ANDA_DISINI") 
-        api_url = f"http://{IP_PUBLIK_RDP}:5000"
-        print(f"API Base URL: {api_url}")
+        # --- PERUBAHAN DI SINI: MENGHAPUS IP PUBLIK RDP ---
+        # Ngrok menangani URL. Kita hanya perlu menginformasikan user untuk menjalankannya.
+        
+        print("\n=======================================================")
+        print("     ⚠️  PENTING: JALANKAN NGROK DI TERMINAL LAIN  ⚠️")
+        print("     Setelah bot ini running, buka terminal baru dan:")
+        print("     ngrok http 5000")
+        print("=======================================================\n")
 
         # 1. Mulai Flask di thread terpisah
         flask_thread = Thread(target=run_flask)
@@ -605,7 +610,7 @@ if __name__ == "__main__":
         flask_thread.start()
         
         # 2. Kirim Pesan Aktivasi Telegram
-        send_tg(f"✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>\nAPI Base URL: {api_url}\n(Gunakan URL ini di shared hosting Anda)", with_inline_keyboard=False)
+        send_tg(f"✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>\n\nURL API Anda akan disediakan oleh Ngrok. Mohon jalankan **ngrok http 5000** di terminal terpisah.", with_inline_keyboard=False)
         
         # 3. Mulai loop asinkron monitoring
         try:
