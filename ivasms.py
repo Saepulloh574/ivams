@@ -7,10 +7,27 @@ import json
 import os
 import requests
 import time
+from dotenv import load_dotenv # <-- Tambahan baru: untuk memuat .env
+
+# Muat variabel lingkungan dari file .env segera setelah import
+load_dotenv() 
 
 # ================= Konstanta Telegram untuk Tombol =================
 TELEGRAM_BOT_LINK = "https://t.me/zuraxridbot"
 TELEGRAM_ADMIN_LINK = "https://t.me/Imr1d"
+
+# ================= Telegram Configuration (Loaded from .env) =================
+# Ambil variabel dari lingkungan. Perhatikan konversi tipe data.
+BOT = os.getenv("TELEGRAM_BOT_TOKEN") 
+CHAT = os.getenv("TELEGRAM_CHAT_ID")   
+# ID Admin harus berupa integer untuk perbandingan
+try:
+    ADMIN_ID = int(os.getenv("TELEGRAM_ADMIN_ID")) 
+except (ValueError, TypeError):
+    print("⚠️ WARNING: TELEGRAM_ADMIN_ID tidak valid. Perintah admin dinonaktifkan.")
+    ADMIN_ID = None
+
+LAST_ID = 0 # Variabel status internal
 
 # ================= Utils =================
 
@@ -47,7 +64,6 @@ FULL MESSAGES:
 
 def format_multiple_otps(otp_list):
     if len(otp_list) == 1:
-        # Panggil format_otp_message, lalu tambahkan keyboard di send_tg
         return format_otp_message(otp_list[0])
     
     header = f"🔐 <b>{len(otp_list)} New OTPs Received</b>\n\n"
@@ -61,7 +77,6 @@ def format_multiple_otps(otp_list):
     return header + "\n".join(items) + "\n\n<i>Tap any OTP to copy it!</i>"
 
 
-# Fungsi-fungsi utilitas lainnya tetap sama...
 def extract_otp_from_text(text):
     if not text:
         return None
@@ -120,8 +135,13 @@ class OTPFilter:
     def _load(self):
         if os.path.exists(self.file):
             try:
-                return json.load(open(self.file))
-            except:
+                # Pastikan hanya memuat jika file tidak kosong
+                if os.stat(self.file).st_size > 0:
+                    return json.load(open(self.file))
+                else:
+                    return {}
+            except Exception as e:
+                print(f"Error loading cache: {e}")
                 return {}
         return {}
     def _save(self):
@@ -158,13 +178,13 @@ class OTPFilter:
 
 otp_filter = OTPFilter()
 
-# ================= Telegram =================
-BOT = "7562117237:AAFQnb5aCmeSHHi_qAJz3vkoX4HbNGohe38"
-CHAT = "-1003492226491"
-LAST_ID = 0
+# ================= Telegram Functionality =================
 
-# --- FUNGSI send_tg YANG DIMODIFIKASI ---
 def send_tg(text, with_inline_keyboard=False):
+    if not BOT or not CHAT:
+        print("❌ Telegram config missing (BOT or CHAT ID). Cannot send message.")
+        return
+
     payload = {
         'chat_id': CHAT,
         'text': text,
@@ -176,28 +196,50 @@ def send_tg(text, with_inline_keyboard=False):
         payload['reply_markup'] = create_inline_keyboard()
 
     try:
-        requests.post(
+        response = requests.post(
             f"https://api.telegram.org/bot{BOT}/sendMessage",
-            data=payload
+            data=payload,
+            timeout=10 # Tambahkan timeout untuk mencegah hang
         )
-    except:
-        pass
+        if not response.ok:
+            # Print error dari API Telegram jika respons tidak OK
+            print(f"⚠️ Telegram API Error ({response.status_code}): {response.text}")
+
+    except requests.exceptions.RequestException as e:
+        # Tangani error koneksi atau timeout
+        print(f"❌ Telegram Connection Error: {e}")
+    except Exception as e:
+        print(f"❌ Unknown Error in send_tg: {e}")
+
 
 def check_cmd(stats):
     global LAST_ID
+    # Hanya jalankan jika ID Admin valid
+    if ADMIN_ID is None:
+        return
+
     try:
         upd = requests.get(
             f"https://api.telegram.org/bot{BOT}/getUpdates?offset={LAST_ID+1}",
-            timeout=5).json()
+            timeout=5
+        ).json()
+        
         for u in upd.get("result",[]):
             LAST_ID = u["update_id"]
             msg = u.get("message",{})
             text = msg.get("text","")
-            if text == "/status":
-                # Pesan status tidak perlu tombol inline
-                send_tg(get_status_message(stats))
-    except:
-        pass
+            user_id = msg.get("from", {}).get("id")
+
+            # --- Perintah Admin ---
+            if user_id == ADMIN_ID:
+                if text == "/status":
+                    # Kirim pesan status ke grup/chat yang sama
+                    send_tg(get_status_message(stats))
+            
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error during getUpdates: {e}")
+    except Exception as e:
+        print(f"❌ Unknown Error in check_cmd: {e}")
 
 # ================= Scraper =================
 URL = "https://www.ivasms.com/portal/live/my_sms"
@@ -223,6 +265,7 @@ def find_clean_message(full_text):
 
 
 async def fetch_sms_from_chrome():
+    # Pastikan browser chrome/chromium berjalan dengan --remote-debugging-port=9222
     browser = await connect(browserURL="http://127.0.0.1:9222")
     pages = await browser.pages()
 
@@ -230,6 +273,7 @@ async def fetch_sms_from_chrome():
     for p in pages:
         if URL in p.url:
             page = p
+            break
     if not page:
         page = await browser.newPage()
         await page.goto(URL)
@@ -239,7 +283,7 @@ async def fetch_sms_from_chrome():
 
     messages = []
 
-    # ================= 1. AMBIL DARI STRUKTUR TABLE NORMAL (FIXED RAW MESSAGE UNIVERSAL) =================
+    # ================= 1. AMBIL DARI STRUKTUR TABLE NORMAL =================
     tables = soup.find_all("table")
     for tb in tables:
         rows = tb.find_all("tr")[1:]
@@ -248,8 +292,7 @@ async def fetch_sms_from_chrome():
             if len(tds) >= 3:
                 td_message = tds[2]
                 
-                # Ambil semua konten anak dari td_message yang bertipe string (teks murni), 
-                # Abaikan elemen tag seperti <label>
+                # Ambil teks murni dari kolom pesan
                 raw_contents = [c.strip() for c in td_message.contents if isinstance(c, str)]
                 raw = " ".join(raw_contents).strip()
                 
@@ -259,7 +302,6 @@ async def fetch_sms_from_chrome():
                     service_raw = tds[1].get_text(strip=True)
                     range_text = service_raw # Universal Range
                         
-                    # DATA LENGKAP DARI TABLE
                     messages.append({
                         "otp": otp,
                         "phone": clean_phone_number(tds[0].get_text(strip=True)),
@@ -269,7 +311,7 @@ async def fetch_sms_from_chrome():
                         "raw_message": raw
                     })
 
-    # ================= 2. AMBIL DARI STRUKTUR DIV BARU (MENGGUNAKAN DETEKSI POLA) =================
+    # ================= 2. AMBIL DARI STRUKTUR DIV BARU (IvaSMS style) =================
     flex_boxes = soup.find_all("div", class_="flex-1 ml-3")
     for box in flex_boxes:
         h6 = box.find("h6")
@@ -283,20 +325,15 @@ async def fetch_sms_from_chrome():
             raw_message_temp = None
             
             if parent_row:
-                # Ambil semua teks dari parent row (termasuk noise)
                 full_text_with_noise = parent_row.get_text(" ", strip=True)
-                
-                # Gunakan pola deteksi spesifik untuk mencari pesan yang bersih
                 raw_message_temp = find_clean_message(full_text_with_noise)
             
-            # Kita hanya lanjutkan jika pesan bersih ditemukan
             if raw_message_temp:
                 otp = extract_otp_from_text(raw_message_temp)
             else:
                 otp = None
             
             if otp:
-                # DATA LENGKAP DARI DIV
                 messages.append({
                     "otp": otp,
                     "phone": clean_phone_number(phone_text),
@@ -308,7 +345,7 @@ async def fetch_sms_from_chrome():
     
     return messages
 
-# --- FUNGSI LOOP DENGAN LOGIKA PENGIRIMAN 1-PER-1 ---
+# --- FUNGSI UTAMA LOOP ---
 
 async def monitor_sms_loop():
     global total_sent
@@ -319,6 +356,7 @@ async def monitor_sms_loop():
             new = otp_filter.filter(msgs)
 
             if new:
+                print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram...")
                 for otp_data in new:
                     message_text = format_otp_message(otp_data)
                     # Kirim pesan dengan tombol inline (True)
@@ -328,8 +366,9 @@ async def monitor_sms_loop():
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
             print(error_message)
-            # Pesan error tidak perlu tombol inline
-            send_tg(f"⚠️ **Error Fetching SMS**: `{error_message}`")
+            # Pesan error hanya dikirim jika itu bukan Pyppeteer/koneksi
+            if "pyppeteer" not in str(e).lower() and "browser" not in str(e).lower():
+                send_tg(f"⚠️ **Error Fetching SMS**: `{error_message}`")
 
 
         uptime = time.time() - start
@@ -340,10 +379,14 @@ async def monitor_sms_loop():
             "cache_size": len(otp_filter.cache)
         }
 
-        check_cmd(stats)
+        check_cmd(stats) # Cek perintah admin
         print(get_status_message(stats))
 
-        await asyncio.sleep(5)
+        await asyncio.sleep(5) # Delay 5 detik sebelum cek berikutnya
 
 if __name__ == "__main__":
-    asyncio.run(monitor_sms_loop())
+    if not BOT or not CHAT:
+        print("FATAL ERROR: Pastikan TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID ada di file .env.")
+    else:
+        print("Starting SMS Monitor Bot...")
+        asyncio.run(monitor_sms_loop())
