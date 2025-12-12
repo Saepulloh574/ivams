@@ -1,4 +1,4 @@
-Import asyncio
+import asyncio
 from pyppeteer import connect
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -492,4 +492,7 @@ if __name__ == "__main__":
         print("FATAL ERROR: Pastikan TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID ada di file .env.")
     else:
         print("Starting SMS Monitor Bot...")
+        # KIRIM PESAN AKTIVASI DI SINI
+        send_tg("✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>", with_inline_keyboard=False)
+        # Mulai loop asinkron
         asyncio.run(monitor_sms_loop())
