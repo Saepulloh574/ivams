@@ -285,7 +285,7 @@ def send_photo_tg(photo_path, caption="", target_chat_id=None):
     try:
         with open(photo_path, 'rb') as photo_file:
             files = {'photo': photo_file}
-            data = {'chat_id': chat_id_to_use, 'caption': caption}
+            data = {'chat_id': chat_id_to_use, 'caption': caption, 'parse_mode': 'HTML'}
             response = requests.post(url, files=files, data=data, timeout=20)
         
         if not response.ok:
@@ -420,22 +420,30 @@ class SMSMonitor:
     # admin_chat_id DITERIMA di sini
     async def refresh_and_screenshot(self, admin_chat_id): 
         if not self.page:
-            await self.initialize()
+            # Jika halaman belum terhubung, coba inisialisasi. Jika gagal, stop.
+            try:
+                await self.initialize()
+            except Exception as e:
+                print(f"❌ Error during initial connect for refresh: {e}")
+                send_tg(f"⚠️ **Error Refresh/Screenshot**: Gagal inisialisasi koneksi browser. `{e.__class__.__name__}: {e}`", target_chat_id=admin_chat_id)
+                return False
 
         screenshot_filename = f"screenshot_{int(time.time())}.png"
         
         try:
             # 1. Refresh halaman
             print("🔄 Performing page refresh...")
+            # Menggunakan page.goto(self.url) atau page.reload() bisa menghapus history
+            # page.reload() lebih aman untuk konteks ini
             await self.page.reload({'waitUntil': 'networkidle0'})
             
             # 2. Ambil screenshot
             print(f"📸 Taking screenshot: {screenshot_filename}")
             await self.page.screenshot({'path': screenshot_filename, 'fullPage': True})
             
-            # 3. Kirim ke Telegram (HANYA KE ADMIN ID)
-            print("📤 Sending screenshot to Telegram...")
-            caption = f"✅ Page Refreshed successfully at {datetime.now().strftime('%H:%M:%S')}"
+            # 3. Kirim ke Telegram (HANYA KE CHAT ID YANG DITENTUKAN, yaitu Admin ID)
+            print("📤 Sending screenshot to Admin Telegram...")
+            caption = f"✅ Page Refreshed successfully at {datetime.now().strftime('%H:%M:%S')}\n\n<i>Pesan OTP di halaman telah dihapus.</i>"
             success = send_photo_tg(screenshot_filename, caption, target_chat_id=admin_chat_id)
             
             return success
@@ -518,18 +526,26 @@ async def monitor_sms_loop():
 
             if new:
                 print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram...")
-                # Jika lebih dari 1 OTP, kirim sebagai pesan gabungan
+                
+                # 1. Kirim Pesan OTP ke CHAT utama
                 if len(new) > 1:
                     message_text = format_multiple_otps(new)
                     send_tg(message_text, with_inline_keyboard=True)
                     total_sent += len(new)
                 else:
-                    # Jika hanya 1, kirim pesan individual
                     for otp_data in new:
                         message_text = format_otp_message(otp_data)
-                        # PESAN OTP: Kirim ke CHAT global (menggunakan default target_chat_id=None)
                         send_tg(message_text, with_inline_keyboard=True)
                         total_sent += 1
+                
+                # 2. Lakukan Refresh dan Screenshot OTOMATIS ke Admin
+                if ADMIN_ID is not None:
+                    print("⚙️ Executing automatic refresh and screenshot to admin...")
+                    # Panggil fungsi refresh dan screenshot
+                    # Ini akan me-reload halaman web dan mengirim screenshot ke ADMIN_ID
+                    await monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID)
+                else:
+                    print("⚠️ WARNING: ADMIN_ID not set. Skipping automatic refresh/screenshot.")
 
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
