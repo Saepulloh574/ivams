@@ -43,19 +43,69 @@ def create_inline_keyboard():
     }
     return json.dumps(keyboard)
 
+def clean_phone_number(phone):
+    if not phone:
+        return "N/A"
+    cleaned = re.sub(r'[^\d+]', '', phone)
+    if cleaned and not cleaned.startswith('+'):
+        # Asumsi jika tidak ada '+' dan minimal 10 digit, tambahkan '+'
+        if len(cleaned) >= 10:
+            cleaned = '+' + cleaned
+    return cleaned or phone
+
+def mask_phone_number(phone, visible_start=4, visible_end=4):
+    """
+    Menyensor nomor telepon di bagian tengah, menyisakan N digit di depan dan M digit di belakang.
+    Mengabaikan tanda '+' di awal saat menghitung digit.
+    Contoh: "+22509876725" -> "+2250*****6725" (visible_start=4, visible_end=4)
+    """
+    if not phone or phone == "N/A":
+        return phone
+    
+    # Hapus tanda '+' jika ada, dan simpan untuk ditambahkan kembali nanti
+    prefix = ""
+    if phone.startswith('+'):
+        prefix = '+'
+        digits = phone[1:]
+    else:
+        digits = phone
+        
+    # Jika total digit kurang dari jumlah digit yang terlihat, jangan disensor
+    if len(digits) <= visible_start + visible_end:
+        return phone
+        
+    # Ambil bagian depan dan belakang yang terlihat
+    start_part = digits[:visible_start]
+    end_part = digits[-visible_end:]
+    
+    # Hitung jumlah digit yang perlu disensor
+    mask_length = len(digits) - visible_start - visible_end
+    
+    # Buat string bintang sesuai panjang yang dibutuhkan
+    masked_part = '*' * mask_length
+    
+    # Gabungkan kembali: Awalan + Depan + Sensor + Belakang
+    return prefix + start_part + masked_part + end_part
+
+
 def format_otp_message(otp_data):
     otp = otp_data.get('otp', 'N/A')
     phone = otp_data.get('phone', 'N/A')
+    
+    # Sensor nomor telepon
+    masked_phone = mask_phone_number(phone, visible_start=4, visible_end=4)
+    
     service = otp_data.get('service', 'Unknown')
     range_text = otp_data.get('range', 'N/A')
     timestamp = otp_data.get('timestamp', datetime.now().strftime('%H:%M:%S'))
     full_message = otp_data.get('raw_message', 'N/A')
 
+    # Menggunakan masked_phone
     return f"""🔐 <b>New OTP Received</b>
 
 🏷️ Range: <b>{range_text}</b>
 
-📱 Number: <code>{phone}</code>
+📱 Number: <code>{masked_phone}</code>
 🌐 Service: <b>{service}</b>
 🔢 OTP: <code>{otp}</code>
 
@@ -64,6 +114,7 @@ FULL MESSAGES:
 
 def format_multiple_otps(otp_list):
     if len(otp_list) == 1:
+        # Jika hanya 1, gunakan fungsi format_otp_message
         return format_otp_message(otp_list[0])
 
     header = f"🔐 <b>{len(otp_list)} New OTPs Received</b>\n\n"
@@ -71,9 +122,16 @@ def format_multiple_otps(otp_list):
     for i, otp_data in enumerate(otp_list, 1):
         otp = otp_data['otp']
         phone = otp_data['phone']
+        
+        # Sensor nomor telepon
+        masked_phone = mask_phone_number(phone, visible_start=4, visible_end=4)
+        
         service = otp_data['service']
         range_text = otp_data.get('range', 'N/A')
-        items.append(f"<b>{i}.</b> <code>{otp}</code> | {service} | <code>{phone}</code> | {range_text}")
+        
+        # Menggunakan masked_phone
+        items.append(f"<b>{i}.</b> <code>{otp}</code> | {service} | <code>{masked_phone}</code> | {range_text}")
+        
     return header + "\n".join(items) + "\n\n<i>Tap any OTP to copy it!</i>"
 
 
@@ -93,15 +151,6 @@ def extract_otp_from_text(text):
             if (len(m.group(1)) == 4 and '20' not in m.group(1)) or len(m.group(1)) > 4:
                 return m.group(1)
     return None
-
-def clean_phone_number(phone):
-    if not phone:
-        return "N/A"
-    cleaned = re.sub(r'[^\d+]', '', phone)
-    if cleaned and not cleaned.startswith('+'):
-        if len(cleaned) >= 10:
-            cleaned = '+' + cleaned
-    return cleaned or phone
 
 def clean_service_name(service):
     if not service:
@@ -301,9 +350,6 @@ class SMSMonitor:
         if not self.page:
             await self.initialize() # Coba inisialisasi jika belum terhubung
 
-        # *** PENTING: Baris refresh otomatis dihapus dari sini ***
-        # Halaman hanya akan direfresh saat perintah /refresh dipanggil.
-
         html = await self.page.content()
         soup = BeautifulSoup(html, "html.parser")
 
@@ -472,11 +518,18 @@ async def monitor_sms_loop():
 
             if new:
                 print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram...")
-                for otp_data in new:
-                    message_text = format_otp_message(otp_data)
-                    # PESAN OTP: Kirim ke CHAT global (menggunakan default target_chat_id=None)
+                # Jika lebih dari 1 OTP, kirim sebagai pesan gabungan
+                if len(new) > 1:
+                    message_text = format_multiple_otps(new)
                     send_tg(message_text, with_inline_keyboard=True)
-                    total_sent += 1
+                    total_sent += len(new)
+                else:
+                    # Jika hanya 1, kirim pesan individual
+                    for otp_data in new:
+                        message_text = format_otp_message(otp_data)
+                        # PESAN OTP: Kirim ke CHAT global (menggunakan default target_chat_id=None)
+                        send_tg(message_text, with_inline_keyboard=True)
+                        total_sent += 1
 
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
