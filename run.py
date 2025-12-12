@@ -138,13 +138,14 @@ class OTPFilter:
     def _load(self):
         if os.path.exists(self.file):
             try:
-                # Menangani file kosong atau error JSONDecodeError
+                # Pastikan hanya memuat jika file tidak kosong
                 if os.stat(self.file).st_size > 0:
                     with open(self.file, 'r') as f:
                         return json.load(f)
                 else:
                     return {}
             except json.JSONDecodeError as e:
+                # Menangkap error jika file ada tapi isinya rusak
                 print(f"⚠️ WARNING: Cache file '{self.file}' corrupted. Resetting cache. Error: {e}")
                 return {}
             except Exception as e:
@@ -186,15 +187,18 @@ class OTPFilter:
 
 otp_filter = OTPFilter()
 
-# ================= Telegram Functionality =================
+# ================= Telegram Functionality (MODIFIED) =================
 
-def send_tg(text, with_inline_keyboard=False):
-    if not BOT or not CHAT:
+# target_chat_id sekarang menjadi opsional (default ke CHAT global)
+def send_tg(text, with_inline_keyboard=False, target_chat_id=None):
+    chat_id_to_use = target_chat_id if target_chat_id is not None else CHAT
+    
+    if not BOT or not chat_id_to_use:
         print("❌ Telegram config missing (BOT or CHAT ID). Cannot send message.")
         return
 
     payload = {
-        'chat_id': CHAT,
+        'chat_id': chat_id_to_use,
         'text': text,
         'parse_mode': 'HTML'
     }
@@ -219,8 +223,11 @@ def send_tg(text, with_inline_keyboard=False):
     except Exception as e:
         print(f"❌ Unknown Error in send_tg: {e}")
 
-def send_photo_tg(photo_path, caption=""):
-    if not BOT or not CHAT:
+# target_chat_id sekarang menjadi opsional (default ke CHAT global)
+def send_photo_tg(photo_path, caption="", target_chat_id=None):
+    chat_id_to_use = target_chat_id if target_chat_id is not None else CHAT
+    
+    if not BOT or not chat_id_to_use:
         print("❌ Telegram config missing (BOT or CHAT ID). Cannot send photo.")
         return False
     
@@ -229,7 +236,7 @@ def send_photo_tg(photo_path, caption=""):
     try:
         with open(photo_path, 'rb') as photo_file:
             files = {'photo': photo_file}
-            data = {'chat_id': CHAT, 'caption': caption}
+            data = {'chat_id': chat_id_to_use, 'caption': caption}
             response = requests.post(url, files=files, data=data, timeout=20)
         
         if not response.ok:
@@ -294,11 +301,9 @@ class SMSMonitor:
         if not self.page:
             await self.initialize() # Coba inisialisasi jika belum terhubung
 
-        # ====================================================================
-        # !!! BARIS REFRESH OTOMATIS DIHAPUS !!!
-        # Halaman hanya akan direfresh jika ada perintah /refresh.
-        # ====================================================================
-        
+        # *** PENTING: Baris refresh otomatis dihapus dari sini ***
+        # Halaman hanya akan direfresh saat perintah /refresh dipanggil.
+
         html = await self.page.content()
         soup = BeautifulSoup(html, "html.parser")
 
@@ -366,14 +371,15 @@ class SMSMonitor:
 
         return messages
     
-    async def refresh_and_screenshot(self):
+    # admin_chat_id DITERIMA di sini
+    async def refresh_and_screenshot(self, admin_chat_id): 
         if not self.page:
             await self.initialize()
 
         screenshot_filename = f"screenshot_{int(time.time())}.png"
         
         try:
-            # 1. Refresh halaman (HANYA TERJADI DI SINI)
+            # 1. Refresh halaman
             print("🔄 Performing page refresh...")
             await self.page.reload({'waitUntil': 'networkidle0'})
             
@@ -381,16 +387,17 @@ class SMSMonitor:
             print(f"📸 Taking screenshot: {screenshot_filename}")
             await self.page.screenshot({'path': screenshot_filename, 'fullPage': True})
             
-            # 3. Kirim ke Telegram
+            # 3. Kirim ke Telegram (HANYA KE ADMIN ID)
             print("📤 Sending screenshot to Telegram...")
             caption = f"✅ Page Refreshed successfully at {datetime.now().strftime('%H:%M:%S')}"
-            success = send_photo_tg(screenshot_filename, caption)
+            success = send_photo_tg(screenshot_filename, caption, target_chat_id=admin_chat_id)
             
             return success
             
         except Exception as e:
+            # Kirim error ke ADMIN ID
             print(f"❌ Error during refresh/screenshot: {e}")
-            send_tg(f"⚠️ **Error Refresh/Screenshot**: `{e.__class__.__name__}: {e}`")
+            send_tg(f"⚠️ **Error Refresh/Screenshot**: `{e.__class__.__name__}: {e}`", target_chat_id=admin_chat_id)
             return False
 
         finally:
@@ -422,12 +429,12 @@ def check_cmd(stats):
             msg = u.get("message",{})
             text = msg.get("text","")
             user_id = msg.get("from", {}).get("id")
-            chat_id = msg.get("chat", {}).get("id")
+            chat_id = msg.get("chat", {}).get("id") # Chat ID tempat perintah berasal
 
             # --- Perintah Admin ---
             if user_id == ADMIN_ID:
                 if text == "/status":
-                    # Kirim pesan status ke chat yang sama
+                    # STATUS: Kirim ke chat tempat perintah berasal (yaitu chat admin)
                     requests.post(
                         f"https://api.telegram.org/bot{BOT}/sendMessage",
                         data={'chat_id': chat_id, 'text': get_status_message(stats), 'parse_mode': 'HTML'}
@@ -435,8 +442,10 @@ def check_cmd(stats):
                 
                 # Perintah /refresh (HANYA JIKA DIPERINTAHKAN)
                 elif text == "/refresh":
-                    send_tg("⏳ Executing page refresh and screenshot...", with_inline_keyboard=False)
-                    asyncio.create_task(monitor.refresh_and_screenshot())
+                    # PRELIMINARY MESSAGE: Kirim ke chat admin
+                    send_tg("⏳ Executing page refresh and screenshot...", with_inline_keyboard=False, target_chat_id=chat_id)
+                    # ASYNC TASK: Panggil dengan chat_id admin
+                    asyncio.create_task(monitor.refresh_and_screenshot(admin_chat_id=chat_id))
 
     except requests.exceptions.RequestException as e:
         print(f"❌ Error during getUpdates: {e}")
@@ -452,12 +461,12 @@ async def monitor_sms_loop():
         await monitor.initialize()
     except Exception as e:
         print(f"FATAL ERROR: Failed to initialize SMSMonitor (Pyppeteer/Browser connection). {e}")
+        # Kirim error ke chat global CHAT
         send_tg("🚨 **FATAL ERROR**: Gagal terhubung ke Chrome/Pyppeteer. Pastikan Chrome berjalan dengan `--remote-debugging-port=9222`.")
         return # Hentikan jika gagal terhubung
 
     while True:
         try:
-            # Sekarang, fetch_sms HANYA mengambil konten HTML TANPA merefresh
             msgs = await monitor.fetch_sms()
             new = otp_filter.filter(msgs)
 
@@ -465,14 +474,14 @@ async def monitor_sms_loop():
                 print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram...")
                 for otp_data in new:
                     message_text = format_otp_message(otp_data)
-                    # Kirim pesan dengan tombol inline (True) - OTOMATIS
+                    # PESAN OTP: Kirim ke CHAT global (menggunakan default target_chat_id=None)
                     send_tg(message_text, with_inline_keyboard=True)
                     total_sent += 1
 
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
             print(error_message)
-            # Pesan error hanya dikirim jika itu bukan Pyppeteer/koneksi
+            # Pesan error umum: Kirim ke CHAT global
             if "pyppeteer" not in str(e).lower() and "browser" not in str(e).lower():
                 send_tg(f"⚠️ **Error Fetching SMS**: `{error_message}`")
 
@@ -487,8 +496,6 @@ async def monitor_sms_loop():
 
         check_cmd(stats)
         
-        # HILANGKAN print status otomatis ke konsol, hanya cetak saat dipanggil /status
-
         await asyncio.sleep(5) # Delay 5 detik sebelum cek berikutnya
 
 if __name__ == "__main__":
@@ -496,7 +503,7 @@ if __name__ == "__main__":
         print("FATAL ERROR: Pastikan TELEGRAM_BOT_TOKEN dan TELEGRAM_CHAT_ID ada di file .env.")
     else:
         print("Starting SMS Monitor Bot...")
-        # KIRIM PESAN AKTIVASI DI AWAL - OTOMATIS
+        # PESAN AKTIVASI: Kirim ke CHAT global (menggunakan default target_chat_id=None)
         send_tg("✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>", with_inline_keyboard=False)
         # Mulai loop asinkron
         asyncio.run(monitor_sms_loop())
