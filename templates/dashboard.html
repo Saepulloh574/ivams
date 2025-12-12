@@ -3,326 +3,274 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram OTP Bot - Dashboard</title>
+    <title>Bot Monitoring Dashboard</title>
     <style>
-        /* (CSS Anda yang panjang DITEMPATKAN DI SINI) */
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
             margin: 0;
             padding: 20px;
-            min-height: 100vh;
-            
-            /* AUTO ZOOM (CSS TRANSFORM SCALE ke 67%) */
-            transform: scale(0.67);
-            transform-origin: 0 0;
-            width: calc(100% / 0.67);
-            height: calc(100% / 0.67);
-            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        .container {
+        .dashboard-container {
+            width: 100%;
             max-width: 800px;
-            margin: 0 auto;
             background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            overflow: hidden;
-        }
-        .header {
-            background: linear-gradient(45deg, #1e3c72, #2a5298);
-            color: white;
             padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #1e88e5;
             text-align: center;
+            margin-bottom: 20px;
+            font-size: 1.8em;
         }
-        .header h1 {
-            margin: 0;
-            font-size: 2.5em;
-        }
-        .header p {
-            margin: 10px 0 0 0;
-            opacity: 0.9;
-        }
-        .content {
-            padding: 30px;
-        }
-        .status-grid {
+        .status-box {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
             margin-bottom: 30px;
         }
-        .status-card {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            border-left: 4px solid #007bff;
+        .status-item {
+            background-color: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
-        .status-card h3 {
-            margin: 0 0 10px 0;
-            color: #333;
-            font-size: 1.1em;
+        .status-item h4 {
+            margin: 0 0 5px 0;
+            color: #1e88e5;
+            font-size: 0.9em;
+            text-transform: uppercase;
         }
-        .status-value {
+        .status-item p {
+            margin: 0;
             font-size: 1.5em;
             font-weight: bold;
-            color: #007bff;
-        }
-        .buttons {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 30px;
-        }
-        .btn {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1em;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            text-align: center;
-            display: block;
-        }
-        .btn:hover {
-            background: #0056b3;
-            transform: translateY(-2px);
-        }
-        .btn.success { background: #28a745; }
-        .btn.success:hover { background: #1e7e34; }
-        .btn.warning { background: #ffc107; color: #212529; }
-        .btn.warning:hover { background: #e0a800; }
-        .btn.danger { background: #dc3545; }
-        .btn.danger:hover { background: #c82333; }
-        .logs {
-            background: #1e1e1e;
-            color: #00ff00;
-            border-radius: 8px;
-            padding: 20px;
-            margin-top: 20px;
-            font-family: 'Courier New', monospace;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-        .feature-list {
-            background: #e9ecef;
-            border-radius: 8px;
-            padding: 20px;
-            margin-top: 20px;
-        }
-        .feature-list h3 {
-            margin-top: 0;
             color: #333;
         }
-        .feature-list ul {
-            margin: 0;
-            padding-left: 20px;
+        .status-main {
+            background-color: #bbdefb;
+            grid-column: 1 / -1;
         }
-        .feature-list li {
-            margin: 8px 0;
-            color: #555;
+        .actions-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
         }
-        .alert {
-            background: #d1ecf1;
-            border: 1px solid #bee5eb;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-            color: #0c5460;
+        .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
         }
-        .footer {
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 6px;
             text-align: center;
-            padding: 20px;
-            color: #6c757d;
-            border-top: 1px solid #dee2e6;
+            text-decoration: none;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .btn:hover {
+            background-color: #45a049;
+            transform: translateY(-1px);
+        }
+        .btn.blue { background-color: #1e88e5; }
+        .btn.blue:hover { background-color: #1565c0; }
+        .btn.red { background-color: #e53935; }
+        .btn.red:hover { background-color: #c62828; }
+        .btn.yellow { background-color: #ffb300; }
+        .btn.yellow:hover { background-color: #ff8f00; }
+        .log-box {
             margin-top: 30px;
+            padding: 15px;
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        #log {
+            height: 250px;
+            overflow-y: scroll;
+            background-color: #212121;
+            color: #e0e0e0;
+            padding: 10px;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.8em;
+            white-space: pre-wrap;
+        }
+        .log-line.error { color: #ff5252; }
+        .log-line.action { color: #4fc3f7; }
+        .log-line.success { color: #a5d6a7; }
+
+        @media (max-width: 600px) {
+            .dashboard-container {
+                padding: 15px;
+            }
+            .status-item p {
+                font-size: 1.2em;
+            }
+            .action-buttons {
+                flex-direction: column;
+            }
+            .btn {
+                width: 100%;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🤖 Telegram OTP Bot</h1>
-            <p>Automated IVASMS OTP Monitoring & Telegram Integration</p>
-        </div>
-        
-        <div class="content">
-            <div class="alert">
-                <strong>📡 Status:</strong> <span id="botStatus">Loading...</span>
+    <div class="dashboard-container">
+        <h1>🚀 Bot Monitoring Dashboard</h1>
+
+        <div class="status-box">
+            <div id="status-main" class="status-item status-main">
+                <h4>Status Bot</h4>
+                <p>Initializing...</p>
             </div>
-            
-            <div class="status-grid">
-                <div class="status-card">
-                    <h3>⏱️ Uptime</h3>
-                    <div class="status-value" id="uptime">--</div>
-                </div>
-                <div class="status-card">
-                    <h3>📨 OTPs Sent</h3>
-                    <div class="status-value" id="otpsSent">--</div>
-                </div>
-                <div class="status-card">
-                    <h3>🔍 Last Check</h3>
-                    <div class="status-value" id="lastCheck">--</div>
-                </div>
-                <div class="status-card">
-                    <h3>💾 Cache Size</h3>
-                    <div class="status-value" id="cacheSize">--</div>
-                </div>
+            <div id="status-uptime" class="status-item">
+                <h4>Uptime</h4>
+                <p>--</p>
             </div>
-            
-            <div class="buttons">
-                <a href="/manual-check" class="btn">🔄 Refresh & Screenshot</a> 
-                <a href="/test-message" class="btn success">📤 Test Message</a>
-                <a href="/telegram-status" class="btn">📊 Send Status</a>
-                <a href="/clear-cache" class="btn warning">🗑️ Clear Cache</a>
-                <a href="/start-monitor" class="btn success">▶️ Start Monitor</a>
-                <a href="/stop-monitor" class="btn danger">⏹️ Stop Monitor</a>
+            <div id="status-otps" class="status-item">
+                <h4>Total OTPs Sent</h4>
+                <p>0</p>
             </div>
-            
-            <div class="feature-list">
-                <h3>🎯 Bot Features</h3>
-                <ul>
-                    <li>✅ Automatic IVASMS login and OTP extraction</li>
-                    <li>✅ Real-time Telegram notifications with touch-to-copy format</li>
-                    <li>✅ Duplicate OTP filtering with smart caching</li>
-                    <li>✅ Background monitoring with 5-second intervals</li>
-                    <li>✅ Live Status Dashboard (This page!)</li>
-                    <li>✅ Auto-Refresh & Screenshot to Admin after OTPs are sent.</li>
-                    <li>✅ Comprehensive error handling and logging</li>
-                    <li>✅ Security-focused with environment variable management</li>
-                </ul>
+            <div id="status-last-check" class="status-item">
+                <h4>Last Check</h4>
+                <p>--</p>
             </div>
-            
-            <div class="logs" id="consoleLogs">
-                <div>🚀 Bot Dashboard Loaded</div>
-                <div>📡 Checking connection status...</div>
-                <div>⚡ Ready for OTP monitoring</div>
+            <div id="status-cache" class="status-item">
+                <h4>Cache Size</h4>
+                <p>0</p>
             </div>
         </div>
-        
-        <div class="footer">
-            <p>💡 <strong>PENTING:</strong> Akses Dashboard ini melalui **Ngrok URL** aktif Anda (`https://[ngrok-url-anda]/`). Pastikan Ngrok berjalan di RDP (`ngrok http 5000`).</p>
-            <p>🔐 <strong>Security:</strong> This bot should only be used for authorized accounts and ethical purposes.</p>
+
+        <div class="actions-header">
+            <h2>⚙️ Bot Actions</h2>
+        </div>
+
+        <div class="action-buttons">
+            <a href="#" class="btn blue" id="refresh-screenshot-btn">🔄 Refresh & Screenshot</a>
+            
+            <a href="#" class="btn blue" id="send-status-btn">📢 Send Telegram Status</a>
+            <a href="#" class="btn yellow" id="test-message-btn">📤 Test Message</a>
+            <a href="#" class="btn red" id="clear-cache-btn">🗑️ Clear OTP Cache</a>
+            <a href="#" class="btn red" id="stop-monitor-btn">⏸️ Stop Monitoring</a>
+            <a href="#" class="btn green" id="start-monitor-btn">▶️ Start Monitoring</a>
+        </div>
+
+        <div class="log-box">
+            <h2>📜 Activity Log</h2>
+            <pre id="log">Log window loaded.</pre>
         </div>
     </div>
 
     <script>
-        // Fungsi untuk mengambil data status bot
-        function updateStatus() {
-            // Menggunakan AJAX Polling dengan path relatif
-            const url = '/api/status?t=' + new Date().getTime(); 
+        const API_STATUS_URL = '/api/status';
+        const logElement = document.getElementById('log');
 
-            fetch(url)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP Error: ${response.status} (${response.statusText})`);
-                    }
-                    
-                    const clonedResponse = response.clone();
-                    return response.json()
-                        .catch(() => {
-                            return clonedResponse.text().then(text => {
-                                throw new Error(`Response was HTML/Text, not JSON. Starts with: ${text.substring(0, 50)}...`);
-                            });
-                        });
-                })
-                .then(data => {
-                    // Update Status Cards
-                    document.getElementById('botStatus').textContent = data.status || 'Unknown';
-                    document.getElementById('uptime').textContent = data.uptime || '--';
-                    document.getElementById('otpsSent').textContent = data.total_otps_sent || '0';
-                    document.getElementById('lastCheck').textContent = data.last_check || 'Never';
-                    document.getElementById('cacheSize').textContent = data.cache_size || '0';
-                    
-                    // Update Log Entry
-                    const logs = document.getElementById('consoleLogs');
-                    const timestamp = new Date().toLocaleTimeString();
-                    logs.innerHTML += `<div>📊 [${timestamp}] Status updated - ${data.total_otps_sent} OTPs sent</div>`;
-                    logs.scrollTop = logs.scrollHeight;
-                    
-                    // Update status bar color
-                    const alertDiv = document.querySelector('.alert');
-                    if (data.status.includes('Running')) {
-                        alertDiv.style.backgroundColor = '#d4edda';
-                        alertDiv.style.borderColor = '#c3e6cb';
-                        alertDiv.style.color = '#155724';
-                    } else if (data.status.includes('FATAL')) {
-                        alertDiv.style.backgroundColor = '#f8d7da';
-                        alertDiv.style.borderColor = '#f5c6cb';
-                        alertDiv.style.color = '#721c24';
-                    } else {
-                        alertDiv.style.backgroundColor = '#d1ecf1';
-                        alertDiv.style.borderColor = '#bee5eb';
-                        alertDiv.style.color = '#0c5460';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error updating status:', error);
-                    const logs = document.getElementById('consoleLogs');
-                    const timestamp = new Date().toLocaleTimeString();
-                    
-                    let displayMessage;
-                    if (error.message.includes('Response was HTML/Text')) {
-                        displayMessage = `❌ [${timestamp}] API Error: Flask/Ngrok mengembalikan HTML. **Cek Ngrok/Bot di RDP!**`;
-                    } else if (error.message.includes('Failed to fetch')) {
-                         displayMessage = `❌ [${timestamp}] Network Error: Gagal konek. Ngrok mati/URL salah.`;
-                    } else {
-                        displayMessage = `❌ [${timestamp}] API Error: ${error.message}.`;
-                    }
-
-                    logs.innerHTML += `<div style="color:red;">${displayMessage}</div>`;
-                    logs.scrollTop = logs.scrollHeight;
-                    document.getElementById('botStatus').textContent = 'API Connection Error';
-                    
-                    // Reset card values if connection error
-                    document.getElementById('uptime').textContent = '--';
-                    document.getElementById('otpsSent').textContent = '--';
-                    document.getElementById('lastCheck').textContent = '--';
-                    document.getElementById('cacheSize').textContent = '--';
-                    const alertDiv = document.querySelector('.alert');
-                    alertDiv.style.backgroundColor = '#f8d7da'; 
-                    alertDiv.style.borderColor = '#f5c6cb';
-                    alertDiv.style.color = '#721c24';
-                });
+        function log(message, type = 'default') {
+            const now = new Date();
+            const timestamp = `[${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')}.${String(now.getSeconds()).padStart(2, '0')}]`;
+            const line = document.createElement('span');
+            line.classList.add('log-line', type);
+            line.textContent = `${timestamp} ${message}`;
+            logElement.appendChild(line);
+            logElement.appendChild(document.createElement('br'));
+            // Auto-scroll ke bawah
+            logElement.scrollTop = logElement.scrollHeight;
         }
 
-        // Update status immediately and then every 30 seconds (AJAX POLLING)
-        updateStatus();
-        setInterval(updateStatus, 30000); 
+        function updateStatus(data) {
+            document.querySelector('#status-main p').textContent = data.status;
+            document.querySelector('#status-uptime p').textContent = data.uptime;
+            document.querySelector('#status-otps p').textContent = data.total_otps_sent;
+            document.querySelector('#status-last-check p').textContent = data.last_check;
+            document.querySelector('#status-cache p').textContent = data.cache_size;
 
-        // Tambahkan event listener untuk tombol-tombol agar memicu action di backend
-        document.querySelectorAll('a.btn').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.preventDefault(); 
-                const href = this.getAttribute('href');
-                const actionName = this.textContent.trim();
-                
-                // Kirim request ke backend API (menggunakan path relatif!)
-                fetch(href) 
-                    .then(response => {
-                        if (!response.ok) {
-                             throw new Error(`HTTP Error: ${response.status} (${response.statusText})`);
-                        }
-                        return response.json()
-                    })
-                    .then(data => {
-                        const logs = document.getElementById('consoleLogs');
-                        const timestamp = new Date().toLocaleTimeString();
-                        logs.innerHTML += `<div>🔥 [${timestamp}] Action: ${actionName} - ${data.message || 'OK'}</div>`;
-                        logs.scrollTop = logs.scrollHeight;
-                        // Setelah action, refresh status untuk update data baru
-                        updateStatus();
-                    })
-                    .catch(error => {
-                        const logs = document.getElementById('consoleLogs');
-                        const timestamp = new Date().toLocaleTimeString();
-                        logs.innerHTML += `<div style="color:red;">❌ [${timestamp}] Action: ${actionName} - ERROR: ${error.message}</div>`;
-                        logs.scrollTop = logs.scrollHeight;
-                    });
-            });
+            // Update warna status
+            const mainBox = document.getElementById('status-main');
+            mainBox.style.backgroundColor = data.status.includes('Running') ? '#bbdefb' : '#ffcdd2'; // Biru atau Merah Muda
+        }
+
+        async function fetchStatus() {
+            try {
+                const response = await fetch(API_STATUS_URL);
+                const data = await response.json();
+                updateStatus(data);
+                log(`Status updated - ${data.total_otps_sent} OTPs sent`, 'success');
+            } catch (error) {
+                log(`ERROR: Could not fetch status. Bot down? (${error.message})`, 'error');
+            }
+        }
+
+        async function handleAction(url, actionName, logType = 'action') {
+            log(`Action: ${actionName}`, 'action');
+            try {
+                const response = await fetch(url);
+                const result = await response.json();
+                if (response.ok) {
+                    log(`SUCCESS: ${result.message}`, 'success');
+                } else {
+                    log(`ERROR: HTTP Error: ${response.status} (${result.message || 'Unknown error'})`, 'error');
+                }
+            } catch (error) {
+                log(`ERROR: Connection failed for ${actionName}. (${error.message})`, 'error');
+            }
+            // Selalu update status setelah action (sinkron atau asinkron)
+            setTimeout(fetchStatus, 1000); 
+        }
+
+        document.getElementById('refresh-screenshot-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            handleAction('/manual-check', '🔄 Refresh & Screenshot');
         });
+
+        document.getElementById('send-status-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            handleAction('/telegram-status', '📢 Send Telegram Status');
+        });
+
+        document.getElementById('test-message-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            handleAction('/test-message', '📤 Test Message');
+        });
+
+        document.getElementById('clear-cache-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            if (confirm("Are you sure you want to clear the OTP cache?")) {
+                handleAction('/clear-cache', '🗑️ Clear OTP Cache', 'error');
+            }
+        });
+        
+        document.getElementById('stop-monitor-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            handleAction('/stop-monitor', '⏸️ Stop Monitoring', 'error');
+        });
+
+        document.getElementById('start-monitor-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            handleAction('/start-monitor', '▶️ Start Monitoring', 'success');
+        });
+
+        // Initial load and set interval
+        log('Bot Dashboard Loaded', 'success');
+        log('Checking connection status...', 'action');
+        fetchStatus();
+        setInterval(fetchStatus, 5000); // Update status setiap 5 detik
     </script>
 </body>
 </html>
