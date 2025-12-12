@@ -208,7 +208,7 @@ def send_tg(text, with_inline_keyboard=False, target_chat_id=None):
         response = requests.post(
             f"https://api.telegram.org/bot{BOT}/sendMessage",
             data=payload,
-            timeout=10
+            timeout=15  # <-- DITINGKATKAN MENJADI 15 DETIK
         )
         if not response.ok:
             print(f"⚠️ Telegram API Error ({response.status_code}): {response.text}")
@@ -431,7 +431,7 @@ def check_cmd(stats):
     try:
         upd = requests.get(
             f"https://api.telegram.org/bot{BOT}/getUpdates?offset={LAST_ID+1}",
-            timeout=5
+            timeout=15  # <-- DITINGKATKAN MENJADI 15 DETIK
         ).json()
 
         for u in upd.get("result",[]):
@@ -517,8 +517,6 @@ app = Flask(__name__)
 # WAJIB: Mengizinkan akses dari domain manapun (shared hosting Anda) ke API ini
 CORS(app) 
 
-# HAPUS: @app.route('/', methods=['GET']) dashboard_html
-
 @app.route('/api/status', methods=['GET'])
 def get_status_json():
     """Mengembalikan data status bot dalam format JSON."""
@@ -530,11 +528,9 @@ def manual_check():
     """Memanggil fetch_and_process_once di loop asinkron."""
     if ADMIN_ID is None: return jsonify({"message": "Error: Admin ID not configured."}), 400
     try:
-        # Gunakan threadsafe untuk menjalankan async function dari Flask thread
         asyncio.run_coroutine_threadsafe(monitor.fetch_and_process_once(), asyncio.get_running_loop())
         return jsonify({"message": "Manual check requested. Check Telegram for results."})
     except RuntimeError:
-        # Ini terjadi jika asyncio loop belum berjalan atau sudah berhenti
         return jsonify({"message": "Error: Asyncio loop is not running. Try refreshing the bot."}), 500
 
 @app.route('/telegram-status', methods=['GET'])
@@ -595,9 +591,6 @@ if __name__ == "__main__":
     else:
         print("Starting SMS Monitor Bot and Flask API...")
         
-        # --- PERUBAHAN DI SINI: MENGHAPUS IP PUBLIK RDP ---
-        # Ngrok menangani URL. Kita hanya perlu menginformasikan user untuk menjalankannya.
-        
         print("\n=======================================================")
         print("     ⚠️  PENTING: JALANKAN NGROK DI TERMINAL LAIN  ⚠️")
         print("     Setelah bot ini running, buka terminal baru dan:")
@@ -609,8 +602,8 @@ if __name__ == "__main__":
         flask_thread.daemon = True
         flask_thread.start()
         
-        # 2. Kirim Pesan Aktivasi Telegram
-        send_tg(f"✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>\n\nURL API Anda akan disediakan oleh Ngrok. Mohon jalankan **ngrok http 5000** di terminal terpisah.", with_inline_keyboard=False)
+        # 2. Kirim Pesan Aktivasi Telegram (Hanya pesan status)
+        send_tg("✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>", with_inline_keyboard=False)
         
         # 3. Mulai loop asinkron monitoring
         try:
