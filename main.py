@@ -1,4 +1,4 @@
-import asyncio
+Import asyncio
 from pyppeteer import connect
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -106,6 +106,7 @@ FULL MESSAGES:
 <blockquote>{full_message}</blockquote>"""
 
 def format_multiple_otps(otp_list):
+    # FUNGSI INI SUDAH TIDAK DIGUNAKAN UNTUK PENGIRIMAN, TETAPI DIJAGA UNTUK REFERENSI
     if len(otp_list) == 1: return format_otp_message(otp_list[0])
     header = f"🔐 <b>{len(otp_list)} New OTPs Received</b>\n\n"
     items = []
@@ -282,9 +283,6 @@ class SMSMonitor:
 
     async def fetch_sms(self):
         if not self.page: await self.initialize()
-        
-        # [PERUBAHAN]: Menghapus baris reload otomatis di sini
-        # Baris berikut telah dihapus: await self.page.reload({'waitUntil': 'domcontentloaded'})
         
         html = await self.page.content()
         soup = BeautifulSoup(html, "html.parser")
@@ -467,27 +465,33 @@ async def monitor_sms_loop():
                 new = otp_filter.filter(msgs)
 
                 if new:
-                    print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram...")
+                    print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram one by one...")
                     
-                    if len(new) > 1:
-                        message_text = format_multiple_otps(new)
+                    # Simpan OTPs yang akan dikirim
+                    otps_to_send = []
+                    for otp_data in new:
+                        otps_to_send.append(otp_data)
+                    
+                    # Kirim pesan satu per satu
+                    for i, otp_data in enumerate(otps_to_send, 1):
+                        # Posisikan pesan dengan nomor urut [i/total]
+                        message_text = f"[{i}/{len(otps_to_send)}] " + format_otp_message(otp_data)
                         send_tg(message_text, with_inline_keyboard=True)
-                        total_sent += len(new)
-                    else:
-                        for otp_data in new:
-                            message_text = format_otp_message(otp_data)
-                            send_tg(message_text, with_inline_keyboard=True)
-                            total_sent += 1
+                        total_sent += 1
+                        # Tambahkan jeda sejenak untuk menghindari rate limit Telegram jika banyak pesan
+                        await asyncio.sleep(0.5) 
                     
-                    # [PERUBAHAN]: Refresh hanya dilakukan di sini (setelah pesan terkirim)
+                    # Refresh hanya dilakukan SETELAH semua pesan terkirim
                     if ADMIN_ID is not None:
                         print("⚙️ Executing automatic refresh and screenshot to admin...")
                         await monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID)
                     else:
                         print("⚠️ WARNING: ADMIN_ID not set. Skipping automatic refresh/screenshot.")
+                
+                # Tidak perlu 'else' di sini, loop akan menunggu di asyncio.sleep(5)
+                
             else:
                 print("⏸️ Monitoring paused.")
-
 
         except Exception as e:
             error_message = f"Error during fetch/send: {e.__class__.__name__}: {e}"
@@ -591,12 +595,20 @@ def run_flask():
     # Menetapkan loop Asyncio ke thread Flask untuk menghindari RuntimeError
     global GLOBAL_ASYNC_LOOP
     if GLOBAL_ASYNC_LOOP and not asyncio._get_running_loop():
+        # Menetapkan loop hanya jika loop belum ditetapkan di thread ini
         asyncio.set_event_loop(GLOBAL_ASYNC_LOOP) 
         print(f"✅ Async loop successfully set for Flask thread: {current_thread().name}")
         
     print(f"✅ Flask API & Dashboard running on http://127.0.0.1:{port}")
     
-    app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
+    # Menambahkan pengecekan untuk menghindari error jika loop sudah running
+    if GLOBAL_ASYNC_LOOP and GLOBAL_ASYNC_LOOP.is_running():
+        # Jika loop utama sudah running, Flask tidak perlu menjalankan loop-nya sendiri
+        app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
+    else:
+         # Jika loop belum running, Flask akan menjalankan loop-nya sendiri (fallback)
+         app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
+
 
 if __name__ == "__main__":
     if not BOT or not CHAT:
