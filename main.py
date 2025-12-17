@@ -86,12 +86,31 @@ def mask_phone_number(phone, visible_start=4, visible_end=4):
     masked_part = '*' * mask_length
     return prefix + start_part + masked_part + end_part
 
+def clean_range_text(text):
+    """
+    Membersihkan teks 'range' dari angka, hanya menyisakan teks.
+    Contoh: 'RANGE 1-2' -> 'RANGE', 'canada 7661' -> 'CANADA'
+    """
+    if not text:
+        return "N/A"
+    # Hapus semua digit dan tanda baca yang terkait dengan range (seperti - , . / )
+    # Kemudian hapus spasi berlebih
+    # Hanya menyisakan huruf dan spasi, kemudian membersihkan spasi berlebih
+    cleaned = re.sub(r'[^a-zA-Z\s]+', ' ', text).strip()
+    return cleaned.upper() if cleaned else "Unknown Range"
+
+
 def format_otp_message(otp_data):
     otp = otp_data.get('otp', 'N/A')
     phone = otp_data.get('phone', 'N/A')
     masked_phone = mask_phone_number(phone, visible_start=4, visible_end=4)
     service = otp_data.get('service', 'Unknown')
-    range_text = otp_data.get('range', 'N/A')
+    
+    # === PERUBAHAN UTAMA: Menerapkan pembersihan pada range_text ===
+    range_raw = otp_data.get('range', 'N/A')
+    range_text = clean_range_text(range_raw)
+    # =============================================================
+    
     timestamp = otp_data.get('timestamp', datetime.now().strftime('%H:%M:%S'))
     full_message = otp_data.get('raw_message', 'N/A')
     return f"""🔐 <b>New OTP Received</b>
@@ -115,7 +134,8 @@ def format_multiple_otps(otp_list):
         phone = otp_data['phone']
         masked_phone = mask_phone_number(phone, visible_start=4, visible_end=4)
         service = otp_data['service']
-        range_text = otp_data.get('range', 'N/A')
+        range_text_raw = otp_data.get('range', 'N/A')
+        range_text = clean_range_text(range_text_raw) # Pembersihan di sini juga
         items.append(f"<b>{i}.</b> <code>{otp}</code> | {service} | <code>{masked_phone}</code> | {range_text}")
     return header + "\n".join(items) + "\n\n<i>Tap any OTP to copy it!</i>"
 
@@ -181,7 +201,7 @@ class OTPFilter:
             except: dead.append(k)
         for k in dead: del self.cache[k]
         self._save()
-    def key(self, d): return f"{d['otp']}_{d['phone']}_{d['service']}_{d.get('range', 'N/A')}"
+    def key(self, d): return f"{d['otp']}_{d['phone']}_{clean_service_name(d['service'])}_{clean_range_text(d.get('range', 'N/A'))}"
     def is_dup(self, d):
         self._cleanup()
         return self.key(d) in self.cache
@@ -254,7 +274,7 @@ OTP_MESSAGE_PATTERNS = [
 ]
 
 def find_clean_message(full_text):
-    for pattern in OTP_MESSAGE_PATTERNS:
+    for pattern in OTP_MESSAGE_PATTERns:
         match = re.search(pattern, full_text, re.I)
         if match: return match.group(1).strip()
     return None
@@ -564,7 +584,7 @@ def test_message_route():
         "otp": "999999",
         "phone": "+6281234567890",
         "service": "Dashboard Test",
-        "range": "RANGE 0-0",
+        "range": "CANADA 7661", # Tes untuk memastikan pembersihan bekerja
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "raw_message": "FB-999999 adalah kode konfirmasi Facebook anda (Pesan Tes)."
     }
@@ -602,6 +622,7 @@ def run_flask():
     print(f"✅ Flask API & Dashboard running on http://127.0.0.1:{port}")
     
     # Menambahkan pengecekan untuk menghindari error jika loop sudah running
+    # Walaupun tidak sempurna, ini adalah pendekatan yang umum dalam hybrid app
     if GLOBAL_ASYNC_LOOP and GLOBAL_ASYNC_LOOP.is_running():
         # Jika loop utama sudah running, Flask tidak perlu menjalankan loop-nya sendiri
         app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
@@ -638,7 +659,7 @@ if __name__ == "__main__":
         flask_thread.start()
         
         # 2. Kirim Pesan Aktivasi Telegram 
-        send_tg("✅ <b>BOT ACTIVE MONITORING IS RUNNING.</b>", with_inline_keyboard=False)
+        send_tg("✅ <b>BOT IVASMS ACTIVE MONITORING IS UNDERWAY.</b>", with_inline_keyboard=False)
         
         # 3. Mulai loop asinkron monitoring
         try:
