@@ -68,7 +68,6 @@ def clean_phone_number(phone):
     cleaned = re.sub(r'[^\d+]', '', phone)
     if cleaned and not cleaned.startswith('+'):
         # Diasumsikan nomor telepon di sini berasal dari kolom yang seharusnya berisi nomor
-        # Jika panjangnya memadai (misalnya 8 digit ke atas), tambahkan '+' di depan
         if len(cleaned) >= 8: cleaned = '+' + cleaned
     return cleaned or phone
 
@@ -99,6 +98,13 @@ def clean_range_text(text):
     cleaned = re.sub(r'[^a-zA-Z\s]+', ' ', text).strip()
     return cleaned.upper() if cleaned else "Unknown Range"
 
+def escape_html(text):
+    """Mengganti karakter HTML yang spesial (<, >, &) dengan entitasnya."""
+    if not isinstance(text, str):
+        return text
+    # Prioritaskan '&' untuk menghindari escaping '&amp;' menjadi '&amp;amp;'
+    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
 
 def format_otp_message(otp_data):
     otp = otp_data.get('otp', 'N/A')
@@ -111,6 +117,10 @@ def format_otp_message(otp_data):
     
     timestamp = otp_data.get('timestamp', datetime.now().strftime('%H:%M:%S'))
     full_message = otp_data.get('raw_message', 'N/A')
+    
+    # Mengamankan pesan penuh dari karakter HTML
+    safe_full_message = escape_html(full_message)
+
     return f"""🔐 <b>New OTP Received</b>
 
 🏷️ Range: <b>{range_text}</b>
@@ -120,7 +130,7 @@ def format_otp_message(otp_data):
 🔢 OTP: <code>{otp}</code>
 
 FULL MESSAGES:
-<blockquote>{full_message}</blockquote>"""
+<blockquote>{safe_full_message}</blockquote>""" # Menggunakan safe_full_message
 
 def format_multiple_otps(otp_list):
     # FUNGSI INI SUDAH TIDAK DIGUNAKAN UNTUK PENGIRIMAN, TETAPI DIJAGA UNTUK REFERENSI
@@ -276,7 +286,6 @@ def send_photo_tg(photo_path, caption="", target_chat_id=None):
 
 # ================= Scraper & Monitor Class =================
 URL = "https://www.ivasms.com/portal/live/my_sms"
-# ⚠️ OTP_MESSAGE_PATTERNS dan find_clean_message telah dihapus ⚠️
 
 class SMSMonitor:
     def __init__(self, url=URL):
@@ -345,9 +354,6 @@ class SMSMonitor:
                         "raw_message": raw_message
                     })
         
-        # Hapus bagian kedua (flex_boxes) dari logika lama
-        # Tidak perlu ada logika lama di sini, karena logika baru sudah spesifik dan harusnya bekerja.
-
         return messages
     
     # Tambahkan metode fallback jika tbody#LiveTestSMS tidak ditemukan
@@ -359,14 +365,15 @@ class SMSMonitor:
             rows = tb.find_all("tr")[1:]
             for r in rows:
                 tds = r.find_all("td")
-                if len(tds) >= 5: # Menggunakan kolom ke-5 untuk pesan (mirip struktur baru)
+                # Jika kita tidak bisa memastikan struktur kolom, kita asumsikan 5 kolom
+                if len(tds) >= 5: 
                     raw = tds[4].get_text(strip=True)
                     otp = extract_otp_from_text(raw)
                     if otp:
-                        # Ini adalah tebakan terbaik dari struktur tabel lama
+                        # Tebakan terbaik dari struktur tabel yang umum
                         phone_td = tds[0].get_text(strip=True)
-                        range_td = tds[1].get_text(strip=True)
-                        service_td = tds[2].get_text(strip=True)
+                        range_td = "Unknown Range" # Jika tidak ada H6/P di td[0]
+                        service_td = tds[1].get_text(strip=True) if len(tds) > 1 else "Unknown Service"
 
                         messages.append({
                             "otp": otp,
@@ -511,7 +518,6 @@ async def monitor_sms_loop():
                         total_sent += 1
                         await asyncio.sleep(0.5) 
                     
-                    # ❌ PENTING: REFRESH OTOMATIS DIHAPUS SESUAI PERMINTAAN USER ❌
                 
             else:
                 print("⏸️ Monitoring paused.")
@@ -588,7 +594,7 @@ def test_message_route():
         "service": "Dashboard Test",
         "range": "CANADA 7661",
         "timestamp": datetime.now().strftime("%H:%M:%S"),
-        "raw_message": "FB-999999 adalah kode konfirmasi Facebook anda (Pesan Tes)."
+        "raw_message": "FB-999999 adalah kode konfirmasi Facebook Anda, dengan tag <#>"
     }
     
     test_msg = format_otp_message(test_data).replace("🔐 <b>New OTP Received</b>", "🧪 <b>TEST MESSAGE FROM DASHBOARD</b>")
