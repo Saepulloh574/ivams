@@ -57,7 +57,7 @@ def create_inline_keyboard():
         "inline_keyboard": [
             [
                 {"text": "➡️ GetNumber", "url": TELEGRAM_BOT_LINK},
-                {"text": "👤 Admin", "url": TELEGRAM_ADMIN_LINK}
+                {"text": "👤 Admin", "url": TELEgram_ADMIN_LINK}
             ]
         ]
     }
@@ -67,7 +67,6 @@ def clean_phone_number(phone):
     if not phone: return "N/A"
     cleaned = re.sub(r'[^\d+]', '', phone)
     if cleaned and not cleaned.startswith('+'):
-        # Diasumsikan nomor telepon di sini berasal dari kolom yang seharusnya berisi nomor
         if len(cleaned) >= 8: cleaned = '+' + cleaned
     return cleaned or phone
 
@@ -90,11 +89,9 @@ def mask_phone_number(phone, visible_start=4, visible_end=4):
 def clean_range_text(text):
     """
     Membersihkan teks 'range' dari angka, hanya menyisakan teks.
-    Contoh: 'RANGE 1-2' -> 'RANGE', 'canada 7661' -> 'CANADA'
     """
     if not text:
         return "N/A"
-    # Hapus semua karakter yang BUKAN huruf dan BUKAN spasi, kemudian bersihkan spasi berlebih
     cleaned = re.sub(r'[^a-zA-Z\s]+', ' ', text).strip()
     return cleaned.upper() if cleaned else "Unknown Range"
 
@@ -102,7 +99,6 @@ def escape_html(text):
     """Mengganti karakter HTML yang spesial (<, >, &) dengan entitasnya."""
     if not isinstance(text, str):
         return text
-    # Prioritaskan '&' untuk menghindari escaping '&amp;' menjadi '&amp;amp;'
     return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
@@ -118,7 +114,6 @@ def format_otp_message(otp_data):
     timestamp = otp_data.get('timestamp', datetime.now().strftime('%H:%M:%S'))
     full_message = otp_data.get('raw_message', 'N/A')
     
-    # Mengamankan pesan penuh dari karakter HTML
     safe_full_message = escape_html(full_message)
 
     return f"""🔐 <b>New OTP Received</b>
@@ -130,42 +125,24 @@ def format_otp_message(otp_data):
 🔢 OTP: <code>{otp}</code>
 
 FULL MESSAGES:
-<blockquote>{safe_full_message}</blockquote>""" # Menggunakan safe_full_message
-
-def format_multiple_otps(otp_list):
-    # FUNGSI INI SUDAH TIDAK DIGUNAKAN UNTUK PENGIRIMAN, TETAPI DIJAGA UNTUK REFERENSI
-    if len(otp_list) == 1: return format_otp_message(otp_list[0])
-    header = f"🔐 <b>{len(otp_list)} New OTPs Received</b>\n\n"
-    items = []
-    for i, otp_data in enumerate(otp_list, 1):
-        otp = otp_data['otp']
-        phone = otp_data['phone']
-        masked_phone = mask_phone_number(phone, visible_start=4, visible_end=4)
-        service = otp_data['service']
-        range_text_raw = otp_data.get('range', 'N/A')
-        range_text = clean_range_text(range_text_raw)
-        items.append(f"<b>{i}.</b> <code>{otp}</code> | {service} | <code>{masked_phone}</code> | {range_text}")
-    return header + "\n".join(items) + "\n\n<i>Tap any OTP to copy it!</i>"
+<blockquote>{safe_full_message}</blockquote>"""
 
 def extract_otp_from_text(text):
     if not text: return None
-    # Pola yang lebih agresif untuk menemukan 4, 5, atau 6 digit
     patterns = [ 
         r'\b(\d{6})\b', 
         r'\b(\d{5})\b', 
         r'\b(\d{4})\b', 
-        r'(?:code|verification|otp|pin)[\s\:\-]*(\d+)' # Mencari label diikuti angka
+        r'(?:code|verification|otp|pin)[\s\:\-]*(\d+)'
     ]
     for p in patterns:
         m = re.search(p, text, re.I)
         if m:
-            otp = m.group(1) if len(m.groups()) == 1 else m.group(0) # Ambil group 1 jika ada
+            otp = m.group(1) if len(m.groups()) == 1 else m.group(0)
             if len(otp) >= 4 and len(otp) <= 6:
-                 # Verifikasi sederhana agar 4 digit bukan tahun
                  if len(otp) == 4 and '20' in otp: continue
                  return otp
             elif len(otp) > 6:
-                # Jika group 0 adalah seluruh pesan (regex terakhir), coba lagi cari digit
                 if len(otp) > 10 and re.search(r'\d{4,6}', otp):
                     return re.search(r'\d{4,6}', otp).group(0)
     return None
@@ -190,13 +167,16 @@ def get_status_message(stats):
 
 <i>Bot is running</i>"""
 
-# ================= OTP Filter Class =================
+# ================= OTP Filter Class (RAM-FIRST & PERMANEN) =================
 
 class OTPFilter:
-    def __init__(self, file='otp_cache.json', expire=30):
+    # Set expire ke nilai sangat besar, karena kita tidak akan menggunakan logika cleanup otomatis
+    def __init__(self, file='otp_cache.json', expire=999999): 
         self.file = file
         self.expire = expire
         self.cache = self._load()
+        self.unsaved_changes = False # FLAG BARU: Apakah ada data baru di RAM yang perlu ditulis ke Disk
+        
     def _load(self):
         if os.path.exists(self.file):
             try:
@@ -210,36 +190,44 @@ class OTPFilter:
                 print(f"Error loading cache: {e}")
                 return {}
         return {}
-    def _save(self): json.dump(self.cache, open(self.file,'w'), indent=2)
+        
+    def _save(self): 
+        try:
+            with open(self.file, 'w') as f:
+                json.dump(self.cache, f, indent=2)
+        except Exception as e:
+            # Tambahkan error handling untuk I/O
+            print(f"❌ FATAL SAVE ERROR: Gagal menulis ke {self.file}. Error: {e}")
+
+    # Logika cleanup otomatis dihapus
     def _cleanup(self):
-        now = datetime.now()
-        dead = []
-        for k,v in self.cache.items():
-            try:
-                t = datetime.fromisoformat(v['timestamp'])
-                if (now-t).total_seconds() > self.expire*60: dead.append(k)
-            except: dead.append(k)
-        for k in dead: del self.cache[k]
-        self._save()
+        pass # TIDAK ADA LAGI PENGHAPUSAN OTOMATIS
+
     def key(self, d): return f"{d['otp']}_{d['phone']}_{clean_service_name(d['service'])}_{clean_range_text(d.get('range', 'N/A'))}"
+    
     def is_dup(self, d):
-        self._cleanup()
+        # self._cleanup() # Dihapus
         return self.key(d) in self.cache
+        
     def add(self, d):
+        # HANYA TULIS KE RAM
         self.cache[self.key(d)] = {'timestamp':datetime.now().isoformat()}
-        self._save()
+        self.unsaved_changes = True # Tandai bahwa ada data baru yang siap disimpan ke disk
+        # self._save() # Dihapus
+        
     def filter(self, lst):
         out = []
         for d in lst:
             if d.get('otp') and d.get('phone') != 'N/A':
                 if not self.is_dup(d):
                     out.append(d)
-                    self.add(d)
+                    self.add(d) # Ditambahkan ke RAM (unsaved_changes=True)
         return out
 
 otp_filter = OTPFilter()
 
 # ================= Telegram Functionality =================
+# ... (Fungsi send_tg dan send_photo_tg tidak berubah)
 
 def send_tg(text, with_inline_keyboard=False, target_chat_id=None):
     chat_id_to_use = target_chat_id if target_chat_id is not None else CHAT
@@ -283,7 +271,7 @@ def send_photo_tg(photo_path, caption="", target_chat_id=None):
     except Exception as e:
         print(f"❌ Unknown Error in send_photo_tg: {e}")
         return False
-
+        
 # ================= Scraper & Monitor Class =================
 URL = "https://www.ivasms.com/portal/live/my_sms"
 
@@ -294,8 +282,6 @@ class SMSMonitor:
         self.page = None
 
     async def initialize(self):
-        # PASTIKAN ANDA SUDAH MENJALANKAN CHROME DENGAN ARGUMEN INI DI RDP:
-        # chrome.exe --remote-debugging-port=9222
         self.browser = await connect(browserURL="http://127.0.0.1:9222")
         pages = await self.browser.pages()
         page = None
@@ -312,36 +298,36 @@ class SMSMonitor:
     async def fetch_sms(self):
         if not self.page: await self.initialize()
         
+        # Tambahkan interaksi ringan untuk memaksa DOM update (opsional, tapi membantu)
+        try:
+            await self.page.evaluate('window.scrollBy(0, 100)') 
+            await self.page.evaluate('window.scrollBy(0, -100)')
+            await asyncio.sleep(0.1) 
+        except Exception as e:
+            pass # Lanjutkan meskipun scroll gagal
+            
         html = await self.page.content()
         soup = BeautifulSoup(html, "html.parser")
         messages = []
 
-        # ================= LOGIKA BARU: AMBIL LANGSUNG DARI TBODY LIVE TEST SMS =================
         tbody = soup.find("tbody", id="LiveTestSMS")
         if not tbody:
-            print("⚠️ WARNING: tbody#LiveTestSMS not found. Reverting to general table search.")
-            # Fallback jika struktur HTML berubah
             return self._fallback_fetch_sms(soup)
 
         rows = tbody.find_all("tr")
         for r in rows:
             tds = r.find_all("td")
-            if len(tds) >= 5: # Memastikan ada kolom yang cukup
-
-                # Kolom 1 (Nomor dan Range)
+            if len(tds) >= 5: 
                 info_div = tds[0].find("div", class_="flex-1 ml-3")
                 range_text = info_div.find("h6").get_text(strip=True) if info_div and info_div.find("h6") else "N/A"
                 phone_raw = info_div.find("p").get_text(strip=True) if info_div and info_div.find("p") else "N/A"
                 phone = clean_phone_number(phone_raw)
 
-                # Kolom 2 (Service)
                 service_raw = tds[1].get_text(strip=True)
                 service = clean_service_name(service_raw)
                 
-                # Kolom 5 (Pesan Mentah/Raw Message)
                 raw_message = tds[4].get_text(strip=True)
                 
-                # Ekstraksi OTP dari Pesan Mentah
                 otp = extract_otp_from_text(raw_message)
 
                 if otp and phone != "N/A":
@@ -356,23 +342,19 @@ class SMSMonitor:
         
         return messages
     
-    # Tambahkan metode fallback jika tbody#LiveTestSMS tidak ditemukan
     def _fallback_fetch_sms(self, soup):
-        # Logika lama (yang tidak spesifik) jika diperlukan sebagai fallback
         messages = []
         tables = soup.find_all("table")
         for tb in tables:
             rows = tb.find_all("tr")[1:]
             for r in rows:
                 tds = r.find_all("td")
-                # Jika kita tidak bisa memastikan struktur kolom, kita asumsikan 5 kolom
                 if len(tds) >= 5: 
                     raw = tds[4].get_text(strip=True)
                     otp = extract_otp_from_text(raw)
                     if otp:
-                        # Tebakan terbaik dari struktur tabel yang umum
                         phone_td = tds[0].get_text(strip=True)
-                        range_td = "Unknown Range" # Jika tidak ada H6/P di td[0]
+                        range_td = "Unknown Range" 
                         service_td = tds[1].get_text(strip=True) if len(tds) > 1 else "Unknown Service"
 
                         messages.append({
@@ -390,14 +372,12 @@ class SMSMonitor:
         if not self.page:
             try: await self.initialize()
             except Exception as e:
-                print(f"❌ Error during initial connect for refresh: {e}")
                 send_tg(f"⚠️ **Error Refresh/Screenshot**: Gagal inisialisasi koneksi browser. `{e.__class__.__name__}: {e}`", target_chat_id=admin_chat_id)
                 return False
 
         screenshot_filename = f"screenshot_{int(time.time())}.png"
         try:
             print("🔄 Performing page refresh...")
-            # Ini adalah refresh yang disengaja untuk membersihkan halaman
             await self.page.reload({'waitUntil': 'networkidle0'}) 
             print(f"📸 Taking screenshot: {screenshot_filename}")
             await self.page.screenshot({'path': screenshot_filename, 'fullPage': True})
@@ -414,9 +394,6 @@ class SMSMonitor:
                 os.remove(screenshot_filename)
                 print(f"🗑️ Cleaned up {screenshot_filename}")
     
-    async def fetch_and_process_once(self, admin_chat_id):
-        pass # Fungsi ini tidak lagi digunakan.
-
 monitor = SMSMonitor()
 
 # ================= Status Global dan Fungsi Update =================
@@ -472,7 +449,6 @@ def check_cmd(stats):
                     )
                 elif text == "/refresh":
                     send_tg("⏳ Executing page refresh and screenshot...", with_inline_keyboard=False, target_chat_id=chat_id)
-                    # Ini adalah refresh yang dipicu oleh perintah admin
                     if GLOBAL_ASYNC_LOOP:
                         asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=chat_id), GLOBAL_ASYNC_LOOP)
                     else:
@@ -502,6 +478,7 @@ async def monitor_sms_loop():
         try:
             if BOT_STATUS["monitoring_active"]:
                 msgs = await monitor.fetch_sms()
+                # Filter menggunakan RAM-Cache yang permanen
                 new = otp_filter.filter(msgs)
 
                 if new:
@@ -511,7 +488,6 @@ async def monitor_sms_loop():
                     for otp_data in new:
                         otps_to_send.append(otp_data)
                     
-                    # Kirim pesan satu per satu
                     for i, otp_data in enumerate(otps_to_send, 1):
                         message_text = f"[{i}/{len(otps_to_send)}] " + format_otp_message(otp_data)
                         send_tg(message_text, with_inline_keyboard=True)
@@ -531,24 +507,40 @@ async def monitor_sms_loop():
         
         await asyncio.sleep(5) 
 
+# ================= FUNGSI PERIODIC SAVE (UNTUK STABILITAS DISK I/O) =================
+
+async def periodic_cache_save(interval_seconds=60):
+    """Menyimpan cache dari RAM ke disk secara berkala setiap 60 detik."""
+    global otp_filter
+    while True:
+        await asyncio.sleep(interval_seconds)
+        
+        # Hanya menyimpan jika ada perubahan di RAM
+        if otp_filter.unsaved_changes:
+            try:
+                print(f"💾 Saving cache ({len(otp_filter.cache)} items) to disk...")
+                otp_filter._save()
+                otp_filter.unsaved_changes = False # Reset flag setelah berhasil disimpan
+                print("✅ Cache save successful.")
+            except Exception as e:
+                # Ini akan terjadi jika ada masalah izin/disk yang serius
+                print(f"❌ CRITICAL: Failed to save otp_cache.json! Error: {e}")
+
 # ================= FLASK WEB SERVER UNTUK API DAN DASHBOARD =================
 
 app = Flask(__name__, template_folder='templates')
 
-# 1. ROUTE UTAMA (UNTUK DASHBOARD)
 @app.route('/', methods=['GET'])
 def index():
     """Melayani file dashboard.html."""
     return render_template('dashboard.html')
 
-# 2. ROUTE API (UNTUK DIPANGGIL OLEH JAVASCRIPT DI dashboard.html)
 @app.route('/api/status', methods=['GET'])
 def get_status_json():
     """Mengembalikan data status bot dalam format JSON."""
     update_global_status() 
     return jsonify(BOT_STATUS)
 
-# ROUTE INI DIUBAH MENJADI FUNGSI REFRESH & SCREENSHOT SAJA
 @app.route('/manual-check', methods=['GET'])
 def manual_check():
     """Memanggil refresh_and_screenshot di loop asinkron (dipicu dari Dashboard)."""
@@ -557,11 +549,8 @@ def manual_check():
         return jsonify({"message": "Error: Asyncio loop not initialized."}), 500
         
     try:
-        # Panggil refresh_and_screenshot
         asyncio.run_coroutine_threadsafe(monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID), GLOBAL_ASYNC_LOOP)
         return jsonify({"message": "Halaman IVASMS Refresh & Screenshot sedang dikirim ke Admin Telegram."})
-    except RuntimeError as e:
-        return jsonify({"message": f"Fatal Error: Asyncio loop issue ({e.__class__.__name__}). Cek log RDP Anda."}), 500
     except Exception as e:
         return jsonify({"message": f"External Error: Gagal menjalankan refresh. Cek log RDP Anda: {e.__class__.__name__}"}), 500
 
@@ -577,10 +566,15 @@ def send_telegram_status_route():
 
 @app.route('/clear-cache', methods=['GET'])
 def clear_otp_cache_route():
-    """Membersihkan cache OTP."""
+    """Membersihkan cache OTP (RAM dan Disk) secara manual."""
     global otp_filter
+    
+    # Reset RAM Cache
     otp_filter.cache = {}
+    
+    # Simpan cache kosong ke Disk (penting agar disk sync dengan RAM)
     otp_filter._save()
+    otp_filter.unsaved_changes = False
     
     update_global_status() 
     return jsonify({"message": f"OTP Cache cleared. New size: {BOT_STATUS['cache_size']}."})
@@ -620,16 +614,14 @@ def run_flask():
     port = int(os.environ.get('PORT', 5000))
     
     global GLOBAL_ASYNC_LOOP
+    # Set loop untuk thread Flask jika diperlukan
     if GLOBAL_ASYNC_LOOP and not asyncio._get_running_loop():
         asyncio.set_event_loop(GLOBAL_ASYNC_LOOP) 
         print(f"✅ Async loop successfully set for Flask thread: {current_thread().name}")
         
     print(f"✅ Flask API & Dashboard running on http://127.0.0.1:{port}")
     
-    if GLOBAL_ASYNC_LOOP and GLOBAL_ASYNC_LOOP.is_running():
-        app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
-    else:
-         app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
+    app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":
@@ -640,7 +632,6 @@ if __name__ == "__main__":
         
         print("\n=======================================================")
         print("     ⚠️  PENTING: JALANKAN NGROK DI TERMINAL LAIN  ⚠️")
-        print("     Setelah bot ini running, buka terminal baru dan:")
         print("     ngrok http 5000")
         print("=======================================================\n")
 
@@ -660,7 +651,11 @@ if __name__ == "__main__":
         # 2. Kirim Pesan Aktivasi Telegram 
         send_tg("✅ <b>BOT IVASMS ACTIVE MONITORING IS RUNNING.</b>", with_inline_keyboard=False)
         
-        # 3. Mulai loop asinkron monitoring
+        # 3. Mulai tugas periodic save (BARU)
+        # Tugas ini memastikan data RAM disimpan ke disk setiap 60 detik.
+        loop.create_task(periodic_cache_save(interval_seconds=60)) 
+        
+        # 4. Mulai loop asinkron monitoring utama
         try:
             loop.run_until_complete(monitor_sms_loop())
         except KeyboardInterrupt:
