@@ -67,7 +67,9 @@ def clean_phone_number(phone):
     if not phone: return "N/A"
     cleaned = re.sub(r'[^\d+]', '', phone)
     if cleaned and not cleaned.startswith('+'):
-        if len(cleaned) >= 10: cleaned = '+' + cleaned
+        # Diasumsikan nomor telepon di sini berasal dari kolom yang seharusnya berisi nomor
+        # Jika panjangnya memadai (misalnya 8 digit ke atas), tambahkan '+' di depan
+        if len(cleaned) >= 8: cleaned = '+' + cleaned
     return cleaned or phone
 
 def mask_phone_number(phone, visible_start=4, visible_end=4):
@@ -93,9 +95,7 @@ def clean_range_text(text):
     """
     if not text:
         return "N/A"
-    # Hapus semua digit dan tanda baca yang terkait dengan range (seperti - , . / )
-    # Kemudian hapus spasi berlebih
-    # Hanya menyisakan huruf dan spasi, kemudian membersihkan spasi berlebih
+    # Hapus semua karakter yang BUKAN huruf dan BUKAN spasi, kemudian bersihkan spasi berlebih
     cleaned = re.sub(r'[^a-zA-Z\s]+', ' ', text).strip()
     return cleaned.upper() if cleaned else "Unknown Range"
 
@@ -106,10 +106,8 @@ def format_otp_message(otp_data):
     masked_phone = mask_phone_number(phone, visible_start=4, visible_end=4)
     service = otp_data.get('service', 'Unknown')
     
-    # === PERUBAHAN UTAMA: Menerapkan pembersihan pada range_text ===
     range_raw = otp_data.get('range', 'N/A')
     range_text = clean_range_text(range_raw)
-    # =============================================================
     
     timestamp = otp_data.get('timestamp', datetime.now().strftime('%H:%M:%S'))
     full_message = otp_data.get('raw_message', 'N/A')
@@ -135,19 +133,31 @@ def format_multiple_otps(otp_list):
         masked_phone = mask_phone_number(phone, visible_start=4, visible_end=4)
         service = otp_data['service']
         range_text_raw = otp_data.get('range', 'N/A')
-        range_text = clean_range_text(range_text_raw) # Pembersihan di sini juga
+        range_text = clean_range_text(range_text_raw)
         items.append(f"<b>{i}.</b> <code>{otp}</code> | {service} | <code>{masked_phone}</code> | {range_text}")
     return header + "\n".join(items) + "\n\n<i>Tap any OTP to copy it!</i>"
 
 def extract_otp_from_text(text):
     if not text: return None
-    patterns = [ r'\b(\d{6})\b', r'\b(\d{5})\b', r'\b(\d{4})\b', r'code[:\s]*(\d+)', r'verification[:\s]*(\d+)', r'otp[:\s]*(\d+)', r'pin[:\s]*(\d+)' ]
+    # Pola yang lebih agresif untuk menemukan 4, 5, atau 6 digit
+    patterns = [ 
+        r'\b(\d{6})\b', 
+        r'\b(\d{5})\b', 
+        r'\b(\d{4})\b', 
+        r'(?:code|verification|otp|pin)[\s\:\-]*(\d+)' # Mencari label diikuti angka
+    ]
     for p in patterns:
         m = re.search(p, text, re.I)
         if m:
-            # Memastikan 4 digit bukan tahun, dan menerima 5 atau 6 digit
-            if (len(m.group(1)) == 4 and '20' not in m.group(1)) or len(m.group(1)) > 4:
-                return m.group(1)
+            otp = m.group(1) if len(m.groups()) == 1 else m.group(0) # Ambil group 1 jika ada
+            if len(otp) >= 4 and len(otp) <= 6:
+                 # Verifikasi sederhana agar 4 digit bukan tahun
+                 if len(otp) == 4 and '20' in otp: continue
+                 return otp
+            elif len(otp) > 6:
+                # Jika group 0 adalah seluruh pesan (regex terakhir), coba lagi cari digit
+                if len(otp) > 10 and re.search(r'\d{4,6}', otp):
+                    return re.search(r'\d{4,6}', otp).group(0)
     return None
 
 def clean_service_name(service):
@@ -266,18 +276,7 @@ def send_photo_tg(photo_path, caption="", target_chat_id=None):
 
 # ================= Scraper & Monitor Class =================
 URL = "https://www.ivasms.com/portal/live/my_sms"
-OTP_MESSAGE_PATTERNS = [
-    r'(FB[-\s]?\d+[\s]+adalah kode konfirmasi Facebook anda)',
-    r'(FB[-\s]?\d+[\s]+is your Facebook confirmation code)',
-    r'(#\s*\d+[\s]+adalah kode Facebook Anda.*)',
-    r'(#\s*\d+[\s]+is your Facebook code.*)',
-]
-
-def find_clean_message(full_text):
-    for pattern in OTP_MESSAGE_PATTERns:
-        match = re.search(pattern, full_text, re.I)
-        if match: return match.group(1).strip()
-    return None
+# ⚠️ OTP_MESSAGE_PATTERNS dan find_clean_message telah dihapus ⚠️
 
 class SMSMonitor:
     def __init__(self, url=URL):
@@ -308,64 +307,78 @@ class SMSMonitor:
         soup = BeautifulSoup(html, "html.parser")
         messages = []
 
-        # ================= 1. AMBIL DARI STRUKTUR TABLE NORMAL (LOGIKA DIPERBAIKI) =================
+        # ================= LOGIKA BARU: AMBIL LANGSUNG DARI TBODY LIVE TEST SMS =================
+        tbody = soup.find("tbody", id="LiveTestSMS")
+        if not tbody:
+            print("⚠️ WARNING: tbody#LiveTestSMS not found. Reverting to general table search.")
+            # Fallback jika struktur HTML berubah
+            return self._fallback_fetch_sms(soup)
+
+        rows = tbody.find_all("tr")
+        for r in rows:
+            tds = r.find_all("td")
+            if len(tds) >= 5: # Memastikan ada kolom yang cukup
+
+                # Kolom 1 (Nomor dan Range)
+                info_div = tds[0].find("div", class_="flex-1 ml-3")
+                range_text = info_div.find("h6").get_text(strip=True) if info_div and info_div.find("h6") else "N/A"
+                phone_raw = info_div.find("p").get_text(strip=True) if info_div and info_div.find("p") else "N/A"
+                phone = clean_phone_number(phone_raw)
+
+                # Kolom 2 (Service)
+                service_raw = tds[1].get_text(strip=True)
+                service = clean_service_name(service_raw)
+                
+                # Kolom 5 (Pesan Mentah/Raw Message)
+                raw_message = tds[4].get_text(strip=True)
+                
+                # Ekstraksi OTP dari Pesan Mentah
+                otp = extract_otp_from_text(raw_message)
+
+                if otp and phone != "N/A":
+                    messages.append({
+                        "otp": otp,
+                        "phone": phone,
+                        "service": service,
+                        "range": range_text,
+                        "timestamp": datetime.now().strftime("%H:%M:%S"),
+                        "raw_message": raw_message
+                    })
+        
+        # Hapus bagian kedua (flex_boxes) dari logika lama
+        # Tidak perlu ada logika lama di sini, karena logika baru sudah spesifik dan harusnya bekerja.
+
+        return messages
+    
+    # Tambahkan metode fallback jika tbody#LiveTestSMS tidak ditemukan
+    def _fallback_fetch_sms(self, soup):
+        # Logika lama (yang tidak spesifik) jika diperlukan sebagai fallback
+        messages = []
         tables = soup.find_all("table")
         for tb in tables:
             rows = tb.find_all("tr")[1:]
             for r in rows:
                 tds = r.find_all("td")
-                if len(tds) >= 3:
-                    td_message = tds[2]
-                    
-                    # LOGIKA SCRAPING YANG LEBIH ANDAL: Mengambil konten string murni saja
-                    raw_contents = [c.strip() for c in td_message.contents if isinstance(c, str)]
-                    raw = " ".join(raw_contents).strip()
-                    
+                if len(tds) >= 5: # Menggunakan kolom ke-5 untuk pesan (mirip struktur baru)
+                    raw = tds[4].get_text(strip=True)
                     otp = extract_otp_from_text(raw)
                     if otp:
-                        service_raw = tds[1].get_text(strip=True)
-                        range_text = service_raw
+                        # Ini adalah tebakan terbaik dari struktur tabel lama
+                        phone_td = tds[0].get_text(strip=True)
+                        range_td = tds[1].get_text(strip=True)
+                        service_td = tds[2].get_text(strip=True)
+
                         messages.append({
                             "otp": otp,
-                            "phone": clean_phone_number(tds[0].get_text(strip=True)),
-                            "service": clean_service_name(service_raw),
-                            "range": range_text,
+                            "phone": clean_phone_number(phone_td),
+                            "service": clean_service_name(service_td),
+                            "range": range_td,
                             "timestamp": datetime.now().strftime("%H:%M:%S"),
                             "raw_message": raw
                         })
-
-        # ================= 2. AMBIL DARI STRUKTUR DIV BARU (LOGIKA ASLI) =================
-        flex_boxes = soup.find_all("div", class_="flex-1 ml-3")
-        for box in flex_boxes:
-            h6 = box.find("h6")
-            p = box.find("p")
-            if h6 and p:
-                range_text = h6.get_text(strip=True)
-                phone_text = p.get_text(strip=True)
-                parent_row = box.find_parent("div", class_="row")
-                raw_message_temp = None
-                if parent_row:
-                    full_text_with_noise = parent_row.get_text(" ", strip=True)
-                    raw_message_temp = find_clean_message(full_text_with_noise)
-                else:
-                    raw_message_temp = None
-                    
-                if raw_message_temp:
-                    otp = extract_otp_from_text(raw_message_temp)
-                else:
-                    otp = None
-
-                if otp:
-                    messages.append({
-                        "otp": otp,
-                        "phone": clean_phone_number(phone_text),
-                        "service": clean_service_name(raw_message_temp),
-                        "range": range_text,
-                        "timestamp": datetime.now().strftime("%H:%M:%S"),
-                        "raw_message": raw_message_temp
-                    })
         return messages
-    
+
+
     async def refresh_and_screenshot(self, admin_chat_id): 
         if not self.page:
             try: await self.initialize()
@@ -487,28 +500,18 @@ async def monitor_sms_loop():
                 if new:
                     print(f"✅ Found {len(new)} new OTP(s). Sending to Telegram one by one...")
                     
-                    # Simpan OTPs yang akan dikirim
                     otps_to_send = []
                     for otp_data in new:
                         otps_to_send.append(otp_data)
                     
                     # Kirim pesan satu per satu
                     for i, otp_data in enumerate(otps_to_send, 1):
-                        # Posisikan pesan dengan nomor urut [i/total]
                         message_text = f"[{i}/{len(otps_to_send)}] " + format_otp_message(otp_data)
                         send_tg(message_text, with_inline_keyboard=True)
                         total_sent += 1
-                        # Tambahkan jeda sejenak untuk menghindari rate limit Telegram jika banyak pesan
                         await asyncio.sleep(0.5) 
                     
-                    # Refresh hanya dilakukan SETELAH semua pesan terkirim
-                    if ADMIN_ID is not None:
-                        print("⚙️ Executing automatic refresh and screenshot to admin...")
-                        await monitor.refresh_and_screenshot(admin_chat_id=ADMIN_ID)
-                    else:
-                        print("⚠️ WARNING: ADMIN_ID not set. Skipping automatic refresh/screenshot.")
-                
-                # Tidak perlu 'else' di sini, loop akan menunggu di asyncio.sleep(5)
+                    # ❌ PENTING: REFRESH OTOMATIS DIHAPUS SESUAI PERMINTAAN USER ❌
                 
             else:
                 print("⏸️ Monitoring paused.")
@@ -576,7 +579,6 @@ def clear_otp_cache_route():
     update_global_status() 
     return jsonify({"message": f"OTP Cache cleared. New size: {BOT_STATUS['cache_size']}."})
 
-# 💡 PERUBAHAN DI SINI: Menggunakan format_otp_message
 @app.route('/test-message', methods=['GET'])
 def test_message_route():
     """Mengirim pesan tes ke Telegram menggunakan format OTP."""
@@ -584,12 +586,11 @@ def test_message_route():
         "otp": "999999",
         "phone": "+6281234567890",
         "service": "Dashboard Test",
-        "range": "CANADA 7661", # Tes untuk memastikan pembersihan bekerja
+        "range": "CANADA 7661",
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "raw_message": "FB-999999 adalah kode konfirmasi Facebook anda (Pesan Tes)."
     }
     
-    # Gunakan format_otp_message dan ubah header agar jelas ini adalah tes
     test_msg = format_otp_message(test_data).replace("🔐 <b>New OTP Received</b>", "🧪 <b>TEST MESSAGE FROM DASHBOARD</b>")
     
     send_tg(test_msg)
@@ -612,22 +613,16 @@ def run_flask():
     """Fungsi untuk menjalankan Flask di thread terpisah."""
     port = int(os.environ.get('PORT', 5000))
     
-    # Menetapkan loop Asyncio ke thread Flask untuk menghindari RuntimeError
     global GLOBAL_ASYNC_LOOP
     if GLOBAL_ASYNC_LOOP and not asyncio._get_running_loop():
-        # Menetapkan loop hanya jika loop belum ditetapkan di thread ini
         asyncio.set_event_loop(GLOBAL_ASYNC_LOOP) 
         print(f"✅ Async loop successfully set for Flask thread: {current_thread().name}")
         
     print(f"✅ Flask API & Dashboard running on http://127.0.0.1:{port}")
     
-    # Menambahkan pengecekan untuk menghindari error jika loop sudah running
-    # Walaupun tidak sempurna, ini adalah pendekatan yang umum dalam hybrid app
     if GLOBAL_ASYNC_LOOP and GLOBAL_ASYNC_LOOP.is_running():
-        # Jika loop utama sudah running, Flask tidak perlu menjalankan loop-nya sendiri
         app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
     else:
-         # Jika loop belum running, Flask akan menjalankan loop-nya sendiri (fallback)
          app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
 
 
@@ -644,13 +639,11 @@ if __name__ == "__main__":
         print("=======================================================\n")
 
         try:
-            # Dapatkan atau buat loop utama
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        # ⚠️ BARIS PENTING: Simpan loop ke global variable
         GLOBAL_ASYNC_LOOP = loop 
         
         # 1. Mulai Flask di thread terpisah
@@ -659,7 +652,7 @@ if __name__ == "__main__":
         flask_thread.start()
         
         # 2. Kirim Pesan Aktivasi Telegram 
-        send_tg("✅ <b>BOT IVASMS ACTIVE MONITORING IS UNDERWAY.</b>", with_inline_keyboard=False)
+        send_tg("✅ <b>BOT IVASMS ACTIVE MONITORING IS RUNNING.</b>", with_inline_keyboard=False)
         
         # 3. Mulai loop asinkron monitoring
         try:
