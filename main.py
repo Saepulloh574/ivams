@@ -57,7 +57,7 @@ def create_inline_keyboard():
         "inline_keyboard": [
             [
                 {"text": "➡️ GetNumber", "url": TELEGRAM_BOT_LINK},
-                {"text": "👤 Admin", "url": TELEgram_ADMIN_LINK}
+                {"text": "👤 Admin", "url": TELEGRAM_ADMIN_LINK}
             ]
         ]
     }
