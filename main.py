@@ -7,23 +7,33 @@ import json
 import os
 import requests
 import time
-from dotenv import load_dotenv
+# from dotenv import load_dotenv # Hapus import ini
 import socket
 from threading import Thread
 
 from flask import Flask, jsonify, render_template
 
-# --- Load environment ---
-load_dotenv()
+# ================= Konfigurasi Variabel (Pengganti .env) =================
+# Anda dapat mengubah nilai di sini
+RDP_PUBLIC_IP = "103.186.30.186" # IP yang digunakan untuk login ke RDP (tanpa port)
+TELEGRAM_BOT_TOKEN = "8355352388:AAFjePLqG9D4v88GSNk18brV_lAtVVEaucE"
+TELEGRAM_CHAT_ID = "-1003492226491"
+TELEGRAM_ADMIN_ID = "7184123643"
+FLASK_PORT = 5000 # Port untuk Flask
+
+# --- Load environment (Variabel di atas akan menggantikan ini) ---
+# load_dotenv() # Tidak lagi diperlukan
 
 # ================= Konstanta Telegram =================
 TELEGRAM_BOT_LINK = "https://t.me/newgettbot"
 TELEGRAM_ADMIN_LINK = "https://t.me/Imr1d"
 
-BOT = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT = os.getenv("TELEGRAM_CHAT_ID")
+# Ambil nilai dari variabel konfigurasi di atas
+BOT = TELEGRAM_BOT_TOKEN
+CHAT = TELEGRAM_CHAT_ID
 try:
-    ADMIN_ID = int(os.getenv("TELEGRAM_ADMIN_ID"))
+    # Menggunakan int(os.getenv(...)) diganti dengan konversi langsung
+    ADMIN_ID = int(TELEGRAM_ADMIN_ID)
 except (ValueError, TypeError):
     print("⚠️ WARNING: TELEGRAM_ADMIN_ID tidak valid. Admin command dinonaktifkan.")
     ADMIN_ID = None
@@ -243,6 +253,7 @@ class SMSMonitor:
         self.page = None
 
     async def initialize(self):
+        # Menggunakan 127.0.0.1:9222 (port default untuk pyppeteer connect)
         self.browser = await connect(browserURL="http://127.0.0.1:9222")
         pages = await self.browser.pages()
         page = next((p for p in pages if self.url in p.url), None)
@@ -336,7 +347,7 @@ def update_global_status():
 # ================= Loop Monitor OTP =================
 def check_cmd(stats):
     global LAST_ID
-    if ADMIN_ID is None: return
+    if ADMIN_ID is None or not BOT: return
     try:
         upd = requests.get(f"https://api.telegram.org/bot{BOT}/getUpdates?offset={LAST_ID+1}", timeout=15).json()
         for u in upd.get("result",[]):
@@ -378,7 +389,9 @@ async def monitor_sms_loop():
                         save_to_smc(otp_data)
 
                         message_text = f"[{i}/{len(new)}] "+format_otp_message(otp_data)
-                        send_tg(message_text, with_inline_keyboard=True)
+                        # send_tg(message_text, with_inline_keyboard=True)
+                        # Menggunakan CHAT_ID yang sudah didefinisikan secara global
+                        send_tg(message_text, with_inline_keyboard=True, target_chat_id=CHAT)
                         total_sent+=1
                         await asyncio.sleep(0.5)
             stats = update_global_status()
@@ -461,4 +474,5 @@ if __name__ == "__main__":
     t.start()
 
     # Start Flask web server
-    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 5000)), debug=False)
+    # Menggunakan FLASK_PORT yang telah didefinisikan
+    app.run(host='0.0.0.0', port=FLASK_PORT, debug=False)
