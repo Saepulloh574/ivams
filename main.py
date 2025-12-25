@@ -15,14 +15,11 @@ from flask import Flask, jsonify, render_template
 
 # ================= Konfigurasi Variabel (Pengganti .env) =================
 # Anda dapat mengubah nilai di sini
-RDP_PUBLIC_IP = "103.186.30.186" # IP yang digunakan untuk login ke RDP (tanpa port)
-TELEGRAM_BOT_TOKEN = "8355352388:AAFjePLqG9D4v88GSNk18brV_lAtVVEaucE"
-TELEGRAM_CHAT_ID = "-1003492226491"
-TELEGRAM_ADMIN_ID = "7184123643"
+RDP_PUBLIC_IP = "103.186.31.44" # IP yang digunakan untuk login ke RDP (tanpa port)
+TELEGRAM_BOT_TOKEN = "8202667164:AAGDDVr2wWKAExgcse0XBjcY0UkztGvCnpo"
+TELEGRAM_CHAT_ID = "-5191105741"
+TELEGRAM_ADMIN_ID = "7557863856"
 FLASK_PORT = 5000 # Port untuk Flask
-
-# --- Load environment (Variabel di atas akan menggantikan ini) ---
-# load_dotenv() # Tidak lagi diperlukan
 
 # ================= Konstanta Telegram =================
 TELEGRAM_BOT_LINK = "https://t.me/newgettbot"
