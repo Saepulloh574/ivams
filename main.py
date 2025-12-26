@@ -22,8 +22,8 @@ TELEGRAM_ADMIN_ID = "7557863856"
 FLASK_PORT = 5000 # Port untuk Flask
 
 # ================= Konstanta Telegram =================
-TELEGRAM_BOT_LINK = "https://t.me/newgettbot"
-TELEGRAM_ADMIN_LINK = "https://t.me/Imr1d"
+TELEGRAM_BOT_LINK = "https://t.me/kurama_numbot"
+TELEGRAM_ADMIN_LINK = "https://t.me/erdaia"
 
 # Ambil nilai dari variabel konfigurasi di atas
 BOT = TELEGRAM_BOT_TOKEN
@@ -54,8 +54,8 @@ def create_inline_keyboard():
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "➡️ GetNumber", "url": TELEGRAM_BOT_LINK},
-                {"text": "👤 Admin", "url": TELEGRAM_ADMIN_LINK}
+                {"text": "📞 GetNumber", "url": TELEGRAM_BOT_LINK},
+                {"text": "👨‍💻 Admin", "url": TELEGRAM_ADMIN_LINK}
             ]
         ]
     }
@@ -99,9 +99,9 @@ def format_otp_message(otp_data):
     return f"""🔐 <b>New OTP Received</b>
 
 🏷️ Range: <b>{range_text}</b>
-📱 Number: <code>{masked_phone}</code>
+📞 Number: <code>{masked_phone}</code>
 🌐 Service: <b>{service}</b>
-🔢 OTP: <code>{otp}</code>
+🔑 OTP: <code>{otp}</code>
 
 FULL MESSAGE:
 <blockquote>{full_message}</blockquote>"""
