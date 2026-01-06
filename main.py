@@ -7,30 +7,42 @@ import json
 import os
 import requests
 import time
-# from dotenv import load_dotenv # Hapus import ini
+from dotenv import load_dotenv # <--- Import kembali
 import socket
 from threading import Thread
 
 from flask import Flask, jsonify, render_template
 
-# ================= Konfigurasi Variabel (Pengganti .env) =================
-# Anda dapat mengubah nilai di sini
-RDP_PUBLIC_IP = "103.186.31.44" # IP yang digunakan untuk login ke RDP (tanpa port)
-TELEGRAM_BOT_TOKEN = "8202667164:AAGDDVr2wWKAExgcse0XBjcY0UkztGvCnpo"
-TELEGRAM_CHAT_ID = "-5191105741"
-TELEGRAM_ADMIN_ID = "7557863856"
-FLASK_PORT = 5000 # Port untuk Flask
+# ================= Memuat Variabel dari .env =================
+load_dotenv() # <--- Panggil untuk memuat variabel lingkungan
+
+# ================= Konfigurasi Variabel =================
+# Mengambil nilai dari .env atau menggunakan nilai default jika tidak ada
+RDP_PUBLIC_IP = os.getenv("RDP_PUBLIC_IP", "127.0.0.1")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_ADMIN_ID = os.getenv("TELEGRAM_ADMIN_ID")
+try:
+    # Ambil FLASK_PORT dan konversi ke int, default ke 5000 jika gagal
+    FLASK_PORT = int(os.getenv("FLASK_PORT", 5000))
+except ValueError:
+    FLASK_PORT = 5000
+    print(f"⚠️ WARNING: FLASK_PORT tidak valid di .env, menggunakan default {FLASK_PORT}.")
+
 
 # ================= Konstanta Telegram =================
-TELEGRAM_BOT_LINK = "https://t.me/kurama_numbot"
-TELEGRAM_ADMIN_LINK = "https://t.me/erdaia"
+TELEGRAM_BOT_LINK = "https://t.me/newgettbot"
+TELEGRAM_ADMIN_LINK = "https://t.me/Imr1d"
 
 # Ambil nilai dari variabel konfigurasi di atas
 BOT = TELEGRAM_BOT_TOKEN
 CHAT = TELEGRAM_CHAT_ID
 try:
-    # Menggunakan int(os.getenv(...)) diganti dengan konversi langsung
-    ADMIN_ID = int(TELEGRAM_ADMIN_ID)
+    # Konversi TELEGRAM_ADMIN_ID yang diambil dari os.getenv ke int
+    if TELEGRAM_ADMIN_ID:
+        ADMIN_ID = int(TELEGRAM_ADMIN_ID)
+    else:
+        ADMIN_ID = None
 except (ValueError, TypeError):
     print("⚠️ WARNING: TELEGRAM_ADMIN_ID tidak valid. Admin command dinonaktifkan.")
     ADMIN_ID = None
@@ -40,6 +52,7 @@ GLOBAL_ASYNC_LOOP = None
 
 # ================= Utils =================
 def get_local_ip():
+# ... (Fungsi ini tetap sama)
     s = None
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -51,6 +64,7 @@ def get_local_ip():
         if s: s.close()
 
 def create_inline_keyboard():
+# ... (Fungsi ini tetap sama)
     keyboard = {
         "inline_keyboard": [
             [
@@ -62,6 +76,7 @@ def create_inline_keyboard():
     return json.dumps(keyboard)
 
 def clean_phone_number(phone):
+# ... (Fungsi ini tetap sama)
     if not phone: return "N/A"
     cleaned = re.sub(r'[^\d+]', '', phone)
     if cleaned and not cleaned.startswith('+') and len(cleaned) >= 8:
@@ -69,6 +84,7 @@ def clean_phone_number(phone):
     return cleaned or phone
 
 def mask_phone_number(phone, visible_start=4, visible_end=4):
+# ... (Fungsi ini tetap sama)
     if not phone or phone == "N/A": return phone
     prefix = '+' if phone.startswith('+') else ''
     digits = phone[1:] if prefix else phone
@@ -78,16 +94,19 @@ def mask_phone_number(phone, visible_start=4, visible_end=4):
     return f"{prefix}{digits[:visible_start]}{masked}{digits[-visible_end:]}"
 
 def clean_range_text(text):
+# ... (Fungsi ini tetap sama)
     """Hanya ambil huruf, buang angka, dan ubah ke huruf besar."""
     if not text: return "N/A"
     cleaned = re.sub(r'[^a-zA-Z\s]+', '', text).strip()
     return cleaned.upper() if cleaned else "UNKNOWN RANGE"
 
 def escape_html(text):
+# ... (Fungsi ini tetap sama)
     if not isinstance(text, str): return text
     return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 def format_otp_message(otp_data):
+# ... (Fungsi ini tetap sama)
     otp = otp_data.get('otp', 'N/A')
     phone = otp_data.get('phone', 'N/A')
     masked_phone = mask_phone_number(phone)
@@ -107,6 +126,7 @@ FULL MESSAGE:
 <blockquote>{full_message}</blockquote>"""
 
 def extract_otp_from_text(text):
+# ... (Fungsi ini tetap sama)
     if not text: return None
     patterns = [r'\b(\d{6})\b', r'\b(\d{5})\b', r'\b(\d{4})\b', r'(?:code|verification|otp|pin)[\s\:\-]*(\d+)']
     for p in patterns:
@@ -121,6 +141,7 @@ def extract_otp_from_text(text):
     return None
 
 def clean_service_name(service):
+# ... (Fungsi ini tetap sama)
     if not service: return "Unknown"
     s = service.strip().title()
     maps = {'fb':'Facebook','google':'Google','whatsapp':'WhatsApp','telegram':'Telegram',
@@ -130,6 +151,7 @@ def clean_service_name(service):
     return s
 
 def get_status_message(stats):
+# ... (Fungsi ini tetap sama)
     return f"""🤖 <b>Bot Status</b>
 
 ⚡ Status: <b>{stats['status']}</b>
@@ -142,6 +164,7 @@ def get_status_message(stats):
 
 # ================= OTP Filter =================
 class OTPFilter:
+# ... (Class ini tetap sama)
     def __init__(self, file='otp_cache.json', expire=999999):
         self.file = file
         self.expire = expire
@@ -188,6 +211,7 @@ otp_filter = OTPFilter()
 SMC_FILE = "smc.json"
 
 def save_to_smc(otp_data):
+# ... (Fungsi ini tetap sama)
     entry = {
         "range": clean_range_text(otp_data.get("range", "N/A")),
         "number": otp_data.get("phone", "N/A"),
@@ -211,6 +235,7 @@ def save_to_smc(otp_data):
 
 # ================= Telegram =================
 def send_tg(text, with_inline_keyboard=False, target_chat_id=None):
+# ... (Fungsi ini tetap sama)
     chat_id_to_use = target_chat_id if target_chat_id else CHAT
     if not BOT or not chat_id_to_use:
         print("❌ Telegram config missing.")
@@ -225,6 +250,7 @@ def send_tg(text, with_inline_keyboard=False, target_chat_id=None):
         print(f"❌ send_tg error: {e}")
 
 def send_photo_tg(photo_path, caption="", target_chat_id=None):
+# ... (Fungsi ini tetap sama)
     chat_id_to_use = target_chat_id if target_chat_id else CHAT
     if not BOT or not chat_id_to_use:
         print("❌ Telegram config missing.")
@@ -244,6 +270,7 @@ def send_photo_tg(photo_path, caption="", target_chat_id=None):
 URL = "https://www.ivasms.com/portal/live/my_sms"
 
 class SMSMonitor:
+# ... (Class ini tetap sama)
     def __init__(self, url=URL):
         self.url = url
         self.browser = None
@@ -330,6 +357,7 @@ total_sent = 0
 BOT_STATUS = {"status":"Initializing...","uptime":"--","total_otps_sent":0,"last_check":"Never","cache_size":0,"monitoring_active":True}
 
 def update_global_status():
+# ... (Fungsi ini tetap sama)
     global BOT_STATUS
     uptime_seconds = time.time()-start
     BOT_STATUS.update({
@@ -343,6 +371,7 @@ def update_global_status():
 
 # ================= Loop Monitor OTP =================
 def check_cmd(stats):
+# ... (Fungsi ini tetap sama)
     global LAST_ID
     if ADMIN_ID is None or not BOT: return
     try:
@@ -367,6 +396,7 @@ def check_cmd(stats):
         print(f"❌ check_cmd error: {e}")
 
 async def monitor_sms_loop():
+# ... (Fungsi ini tetap sama)
     global total_sent
     try: await monitor.initialize()
     except Exception as e:
@@ -399,6 +429,7 @@ async def monitor_sms_loop():
 
 # ================= Periodic Save Cache =================
 async def periodic_cache_save(interval_seconds=60):
+# ... (Fungsi ini tetap sama)
     global otp_filter
     while True:
         await asyncio.sleep(interval_seconds)
@@ -415,15 +446,18 @@ app = Flask(__name__, template_folder='templates')
 
 @app.route('/', methods=['GET'])
 def index():
+# ... (Fungsi ini tetap sama)
     return render_template('dashboard.html')
 
 @app.route('/api/status', methods=['GET'])
 def get_status_json():
+# ... (Fungsi ini tetap sama)
     update_global_status()
     return jsonify(BOT_STATUS)
 
 @app.route('/manual-check', methods=['GET'])
 def manual_check():
+# ... (Fungsi ini tetap sama)
     if ADMIN_ID is None:
         return jsonify({"message":"Admin ID not configured"}), 400
     if GLOBAL_ASYNC_LOOP is None:
@@ -436,6 +470,7 @@ def manual_check():
 
 @app.route('/telegram-status', methods=['GET'])
 def send_telegram_status_route():
+# ... (Fungsi ini tetap sama)
     if ADMIN_ID is None:
         return jsonify({"message":"Admin ID not configured"}), 400
     stats_msg = get_status_message(update_global_status())
@@ -444,6 +479,7 @@ def send_telegram_status_route():
 
 @app.route('/clear-cache', methods=['GET'])
 def clear_otp_cache_route():
+# ... (Fungsi ini tetap sama)
     global otp_filter
     otp_filter.cache = {}
     otp_filter._save()
@@ -453,6 +489,7 @@ def clear_otp_cache_route():
 
 # ================= Main Async Loop =================
 def start_async_loop():
+# ... (Fungsi ini tetap sama)
     global GLOBAL_ASYNC_LOOP
     loop = asyncio.new_event_loop()
     GLOBAL_ASYNC_LOOP = loop
@@ -472,4 +509,5 @@ if __name__ == "__main__":
 
     # Start Flask web server
     # Menggunakan FLASK_PORT yang telah didefinisikan
+    print(f"🌐 Flask running on http://0.0.0.0:{FLASK_PORT}")
     app.run(host='0.0.0.0', port=FLASK_PORT, debug=False)
