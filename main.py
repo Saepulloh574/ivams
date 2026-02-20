@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 import socket
 from threading import Thread
 from flask import Flask, jsonify, render_template
+import html  # Diperlukan untuk escape karakter HTML pada pesan Telegram
 
 # ================= Konfigurasi =================
 load_dotenv()
@@ -123,8 +124,11 @@ def send_tg(text, target_chat_id=None):
     if not BOT or not chat_id: return
     url = f"https://api.telegram.org/bot{BOT}/sendMessage"
     payload = {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}
-    try: requests.post(url, data=payload, timeout=10)
-    except Exception as e: print(f"❌ TG Error: {e}")
+    try: 
+        res = requests.post(url, data=payload, timeout=10)
+        if not res.ok:
+            print(f"❌ TG API Error: {res.text}")
+    except Exception as e: print(f"❌ TG Connection Error: {e}")
 
 # ================= SMS Monitor (The Scraper) =================
 class SMSMonitor:
@@ -148,8 +152,8 @@ class SMSMonitor:
     async def fetch_sms(self):
         if not self.page: await self.initialize()
         try:
-            html = await self.page.content()
-            soup = BeautifulSoup(html, 'html.parser')
+            html_content = await self.page.content()
+            soup = BeautifulSoup(html_content, 'html.parser')
             messages = []
 
             tbody = soup.find("tbody", id="LiveTestSMS")
@@ -201,14 +205,17 @@ async def monitor_sms_loop():
                     otp_filter.add(m)
                     save_to_smc(m)
                     
-                    # Format Pesan Telegram
+                    # Escape raw_message agar tag seperti <#> tidak merusak HTML Telegram
+                    safe_msg = html.escape(m['raw_message'])
+                    
+                    # Format Pesan Telegram menggunakan <b> sesuai preferensi
                     txt = (f"🔐 <b>New OTP Received</b>\n\n"
                            f"🏷️ Range: <b>{m['range']}</b>\n"
                            f"📞 Number: <code>{mask_phone_number(m['phone'])}</code>\n"
                            f"🌐 Service: <b>{m['service']}</b>\n"
                            f"🔑 OTP: <code>{m['otp']}</code>\n\n"
                            f"📝 Full Message:\n"
-                           f"<blockquote>{m['raw_message']}</blockquote>")
+                           f"<blockquote>{safe_msg}</blockquote>")
                     
                     send_tg(txt)
                     print(f"🚀 OTP Sent: {m['phone']} - {m['otp']}")
