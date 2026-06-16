@@ -15,7 +15,7 @@ import html  # Diperlukan untuk escape karakter HTML pada pesan Telegram
 
 # ================= Konfigurasi =================
 load_dotenv()
-RDP_PUBLIC_IP = os.getenv("RDP_PUBLIC_IP", "127.0.0.1")
+RDP_PUBLIC_IP = os.getenv("RDP_PUBLIC_IP", "103.186.31.45")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TELEGRAM_ADMIN_ID = os.getenv("TELEGRAM_ADMIN_ID")
